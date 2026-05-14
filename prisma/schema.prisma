@@ -1,0 +1,176 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleName {
+  admin
+  estudiante
+  docente
+}
+
+enum ProjectStatus {
+  borrador
+  publicado
+  archivado
+}
+
+enum ProjectVisibility {
+  publico
+  privado
+  por_enlace
+}
+
+enum FileType {
+  juego_webgl
+  portada
+  captura
+}
+
+enum InputType {
+  teclado
+  mouse
+  mando
+  mobile
+}
+
+model Rol {
+  id          Int      @id @default(autoincrement())
+  nombre      RoleName @unique
+  descripcion String?
+  usuarios    Usuario[]
+
+  @@map("roles")
+}
+
+model Usuario {
+  id             String   @id @default(uuid())
+  firebase_uid   String   @unique
+  nombre         String
+  correo         String   @unique
+  activo         Boolean  @default(true)
+  fecha_registro DateTime @default(now())
+  id_rol         Int
+  rol            Rol      @relation(fields: [id_rol], references: [id])
+  proyectos      Proyecto[]
+  comentarios    Comentario[]
+
+  @@map("usuarios")
+}
+
+model Categoria {
+  id          Int        @id @default(autoincrement())
+  nombre      String     @unique
+  descripcion String?
+  proyectos   Proyecto[]
+
+  @@map("categorias")
+}
+
+model Etiqueta {
+  id        Int                @id @default(autoincrement())
+  nombre    String             @unique
+  proyectos ProyectoEtiqueta[]
+
+  @@map("etiquetas")
+}
+
+model Proyecto {
+  id                String            @id @default(uuid())
+  nombre            String
+  descripcion       String?
+  instrucciones     String?
+  slug              String            @unique
+  estado            ProjectStatus     @default(borrador)
+  visibilidad       ProjectVisibility @default(privado)
+  destacado         Boolean           @default(false)
+  fecha_creacion    DateTime          @default(now())
+  fecha_publicacion DateTime?
+  id_usuario        String
+  usuario           Usuario           @relation(fields: [id_usuario], references: [id])
+  id_categoria      Int?
+  categoria         Categoria?        @relation(fields: [id_categoria], references: [id])
+  etiquetas         ProyectoEtiqueta[]
+  versiones         VersionProyecto[]
+  controles         ControlJuego[]
+  comentarios       Comentario[]
+  visitas           Visita[]
+
+  @@map("proyectos")
+}
+
+model ProyectoEtiqueta {
+  id_proyecto String
+  id_etiqueta Int
+  proyecto    Proyecto @relation(fields: [id_proyecto], references: [id], onDelete: Cascade)
+  etiqueta    Etiqueta @relation(fields: [id_etiqueta], references: [id], onDelete: Cascade)
+
+  @@id([id_proyecto, id_etiqueta])
+  @@map("proyecto_etiquetas")
+}
+
+model VersionProyecto {
+  id             String    @id @default(uuid())
+  numero_version String
+  notas_version  String?
+  es_activa      Boolean   @default(false)
+  fecha_subida   DateTime  @default(now())
+  id_proyecto    String
+  proyecto       Proyecto  @relation(fields: [id_proyecto], references: [id], onDelete: Cascade)
+  archivos       Archivo[]
+
+  @@map("versiones_proyecto")
+}
+
+model Archivo {
+  id             String          @id @default(uuid())
+  tipo           FileType
+  nombre_archivo String
+  ruta_storage   String
+  tamanio_bytes  BigInt
+  fecha_subida   DateTime        @default(now())
+  id_version     String
+  version        VersionProyecto @relation(fields: [id_version], references: [id], onDelete: Cascade)
+
+  @@map("archivos")
+}
+
+model ControlJuego {
+  id                 String    @id @default(uuid())
+  tipo_entrada       InputType
+  tecla_boton        String
+  descripcion_accion String
+  orden              Int       @default(0)
+  id_proyecto        String
+  proyecto           Proyecto  @relation(fields: [id_proyecto], references: [id], onDelete: Cascade)
+
+  @@map("controles_juego")
+}
+
+model Comentario {
+  id           String   @id @default(uuid())
+  contenido    String
+  calificacion Int?
+  activo       Boolean  @default(true)
+  fecha        DateTime @default(now())
+  id_proyecto  String
+  proyecto     Proyecto @relation(fields: [id_proyecto], references: [id], onDelete: Cascade)
+  id_usuario   String
+  usuario      Usuario  @relation(fields: [id_usuario], references: [id])
+
+  @@map("comentarios")
+}
+
+model Visita {
+  id          String   @id @default(uuid())
+  fecha       DateTime @default(now())
+  origen      String?
+  id_proyecto String
+  proyecto    Proyecto @relation(fields: [id_proyecto], references: [id], onDelete: Cascade)
+
+  @@map("visitas")
+}
