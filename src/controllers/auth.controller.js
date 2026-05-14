@@ -1,4 +1,4 @@
-const { registerUser, syncUser } = require('../services/auth.service');
+const { registerUser, syncUser, generatePasswordResetLink } = require('../services/auth.service');
 const { success } = require('../utils/response');
 
 const register = async (req, res, next) => {
@@ -29,8 +29,7 @@ const sync = async (req, res, next) => {
 const forgotPassword = async (req, res, next) => {
   try {
     const { correo } = req.body
-    await authService.generatePasswordResetLink(correo)
-    // Always respond 200 — don't reveal if email exists
+    await generatePasswordResetLink(correo)
     success(res, { message: 'If that email exists, a reset link has been sent.' })
   } catch (err) {
     next(err)
