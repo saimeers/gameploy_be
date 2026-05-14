@@ -2,7 +2,7 @@ const admin = require('../config/firebase');
 const { ValidationError } = require('../utils/errors');
 const { PrismaClient } = require('@prisma/client');
 const { ConflictError } = require('../utils/errors');
-const { sendWelcomeEmail } = require('./email.service');
+const { sendWelcomeEmail, sendPasswordResetEmail } = require('./email.service');
 
 const prisma = new PrismaClient();
 
