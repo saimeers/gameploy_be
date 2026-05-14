@@ -101,4 +101,23 @@ router.delete('/projects/:id', c.deleteProject);
  */
 router.patch('/comments/:id/moderate', commentController.moderate);
 
+/**
+ * @swagger
+ * /admin/users/{id}/approve:
+ *   patch:
+ *     summary: Approve a pending user and assign their requested role
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: User approved }
+ *       409: { description: User is not pending }
+ */
+router.patch('/users/:id/approve', c.approveUser);
+
 module.exports = router;

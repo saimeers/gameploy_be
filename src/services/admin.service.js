@@ -51,4 +51,31 @@ const adminDeleteProject = async (projectId) => {
   return prisma.proyecto.delete({ where: { id: projectId } });
 };
 
-module.exports = { getStats, getAllProjects, toggleFeatured, adminDeleteProject };
+const approveUser = async (userId) => {
+  const user = await prisma.usuario.findUnique({
+    where: { id: userId },
+    include: { rol: true },
+  });
+  if (!user) throw new NotFoundError('User not found');
+  if (user.rol.nombre !== 'pendiente') {
+    throw new ConflictError('User is not pending approval');
+  }
+  if (!user.rol_solicitado) {
+    throw new ValidationError('User has no requested role to approve');
+  }
+
+  const rolAprobado = await prisma.rol.findUnique({
+    where: { nombre: user.rol_solicitado },
+  });
+
+  return prisma.usuario.update({
+    where: { id: userId },
+    data: {
+      id_rol: rolAprobado.id,
+      rol_solicitado: null, 
+    },
+    include: { rol: true },
+  });
+};
+
+module.exports = { getStats, getAllProjects, toggleFeatured, adminDeleteProject, approveUser };

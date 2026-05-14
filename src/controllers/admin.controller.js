@@ -30,4 +30,11 @@ const deleteProject = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { getStats, getAllProjects, toggleFeatured, deleteProject };
+const approveUser = async (req, res, next) => {
+  try {
+    const user = await adminService.approveUser(req.params.id);
+    success(res, { data: user, message: 'User approved' });
+  } catch (err) { next(err); }
+};
+
+module.exports = { getStats, getAllProjects, toggleFeatured, deleteProject, approveUser };

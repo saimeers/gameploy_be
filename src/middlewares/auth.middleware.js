@@ -20,7 +20,6 @@ const verifyToken = async (req, res, next) => {
 
     const decoded = await admin.auth().verifyIdToken(token);
 
-    // Optional DB lookup
     const dbUser = await prisma.usuario.findUnique({
       where: { firebase_uid: decoded.uid },
       include: { rol: true },
@@ -47,6 +46,10 @@ const requireRegisteredUser = (req, _res, next) => {
 
   if (!req.user.dbUser.activo) {
     return next(new UnauthorizedError('Account is disabled'));
+  }
+
+  if (dbUser.rol.nombre === 'pendiente') {
+    throw new AppError('Your account is pending admin approval', 403);
   }
 
   next();

@@ -11,6 +11,7 @@ enum RoleName {
   admin
   estudiante
   docente
+  pendiente
 }
 
 enum ProjectStatus {
@@ -56,6 +57,7 @@ model Usuario {
   fecha_registro DateTime @default(now())
   id_rol         Int
   rol            Rol      @relation(fields: [id_rol], references: [id])
+  rol_solicitado RoleName?
   proyectos      Proyecto[]
   comentarios    Comentario[]
 

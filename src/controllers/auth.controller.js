@@ -3,10 +3,10 @@ const { success } = require('../utils/response');
 
 const register = async (req, res, next) => {
   try {
-    const { nombre, correo } = req.body;
-    const { uid } = req.user; // verified by verifyToken middleware
-    const user = await registerUser({ firebase_uid: uid, nombre, correo });
-    success(res, { data: user, message: 'User registered successfully', statusCode: 201 });
+    const { nombre, correo, rol_solicitado } = req.body; 
+    const { uid } = req.user;
+    const user = await registerUser({ firebase_uid: uid, nombre, correo, rol_solicitado });
+    success(res, { data: user, message: 'User registered. Pending admin approval.', statusCode: 201 });
   } catch (err) {
     next(err);
   }

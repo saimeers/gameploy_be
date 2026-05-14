@@ -2,11 +2,12 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 async function main() {
-  const roles = ['admin', 'estudiante', 'docente'];
+  const roles = ['admin', 'estudiante', 'docente', 'pendiente'];
   const roleDescriptions = {
     admin: 'Acceso total al sistema',
     estudiante: 'Puede crear y gestionar sus propios proyectos',
     docente: 'Puede visualizar proyectos y dejar retroalimentación',
+    pendiente: 'Usuario en espera de aprobación por un administrador',
   };
 
   for (const nombre of roles) {
@@ -34,6 +35,7 @@ async function main() {
     });
   }
   console.log('✓ Categorias seeded');
+
 }
 
 main()
