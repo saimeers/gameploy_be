@@ -1,3 +1,5 @@
+const admin = require('../config/firebase');
+const { ValidationError } = require('../utils/errors');
 const { PrismaClient } = require('@prisma/client');
 const { ConflictError } = require('../utils/errors');
 const { sendWelcomeEmail } = require('./email.service');
@@ -62,7 +64,6 @@ const syncUser = async ({ firebase_uid, nombre, correo, rol_solicitado }) => {
 const generatePasswordResetLink = async (correo) => {
   const user = await prisma.usuario.findUnique({ where: { correo } })
   if (!user) {
-    // Don't reveal if email exists or not
     return
   }
 
