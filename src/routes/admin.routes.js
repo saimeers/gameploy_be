@@ -1,52 +1,104 @@
 const router = require('express').Router();
-const { register, sync } = require('../controllers/auth.controller');
+const c = require('../controllers/admin.controller');
+const commentController = require('../controllers/comment.controller');
 const { verifyToken } = require('../middlewares/auth.middleware');
+const { requireRoles } = require('../middlewares/rbac.middleware');
+
+// All admin routes require admin role
+router.use(verifyToken, requireRoles('admin'));
 
 /**
  * @swagger
- * /auth/register:
- *   post:
- *     summary: Register user in DB after Firebase signup
- *     tags: [Auth]
+ * /admin/stats:
+ *   get:
+ *     summary: Get platform usage stats
+ *     tags: [Admin]
  *     security:
  *       - bearerAuth: []
+ *     responses:
+ *       200: { description: Stats object }
+ */
+router.get('/stats', c.getStats);
+
+/**
+ * @swagger
+ * /admin/projects:
+ *   get:
+ *     summary: List all projects (admin view)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200: { description: All projects }
+ */
+router.get('/projects', c.getAllProjects);
+
+/**
+ * @swagger
+ * /admin/projects/{id}/featured:
+ *   patch:
+ *     summary: Toggle featured status of a project
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
  *     requestBody:
- *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required: [nombre, correo]
  *             properties:
- *               nombre: { type: string }
- *               correo: { type: string, format: email }
+ *               destacado: { type: boolean }
  *     responses:
- *       201: { description: User registered }
- *       409: { description: Already registered }
+ *       200: { description: Featured updated }
  */
-router.post('/register', verifyToken, register);
+router.patch('/projects/:id/featured', c.toggleFeatured);
 
 /**
  * @swagger
- * /auth/sync:
- *   post:
- *     summary: Sync user on login (email/pass or Google)
- *     tags: [Auth]
+ * /admin/projects/{id}:
+ *   delete:
+ *     summary: Delete any project (admin)
+ *     tags: [Admin]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Project deleted }
+ */
+router.delete('/projects/:id', c.deleteProject);
+
+/**
+ * @swagger
+ * /admin/comments/{id}/moderate:
+ *   patch:
+ *     summary: Moderate a comment
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
  *     requestBody:
- *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required: [nombre, correo]
  *             properties:
- *               nombre: { type: string }
- *               correo: { type: string }
+ *               activo: { type: boolean }
  *     responses:
- *       200: { description: User synced }
+ *       200: { description: Comment moderated }
  */
-router.post('/sync', verifyToken, sync);
+router.patch('/comments/:id/moderate', commentController.moderate);
 
 module.exports = router;

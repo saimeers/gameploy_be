@@ -1,104 +1,52 @@
 const router = require('express').Router();
-const c = require('../controllers/user.controller');
+const { register, sync } = require('../controllers/auth.controller');
 const { verifyToken } = require('../middlewares/auth.middleware');
-const { requireRoles } = require('../middlewares/rbac.middleware');
 
 /**
  * @swagger
- * /users/me:
- *   get:
- *     summary: Get current user profile
- *     tags: [Users]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200: { description: User profile }
- *   patch:
- *     summary: Update current user profile
- *     tags: [Users]
+ * /auth/register:
+ *   post:
+ *     summary: Register user in DB after Firebase signup
+ *     tags: [Auth]
  *     security:
  *       - bearerAuth: []
  *     requestBody:
+ *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [nombre, correo]
  *             properties:
  *               nombre: { type: string }
+ *               correo: { type: string, format: email }
  *     responses:
- *       200: { description: Updated profile }
+ *       201: { description: User registered }
+ *       409: { description: Already registered }
  */
-router.get('/me', verifyToken, c.getMe);
-router.patch('/me', verifyToken, c.updateMe);
+router.post('/register', verifyToken, register);
 
 /**
  * @swagger
- * /users:
- *   get:
- *     summary: List all users (admin only)
- *     tags: [Users]
+ * /auth/sync:
+ *   post:
+ *     summary: Sync user on login (email/pass or Google)
+ *     tags: [Auth]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: page
- *         schema: { type: integer }
- *       - in: query
- *         name: limit
- *         schema: { type: integer }
- *     responses:
- *       200: { description: User list }
- */
-router.get('/', verifyToken, requireRoles('admin'), c.getAll);
-
-/**
- * @swagger
- * /users/{id}/role:
- *   patch:
- *     summary: Update user role (admin only)
- *     tags: [Users]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: string }
  *     requestBody:
+ *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [nombre, correo]
  *             properties:
- *               rol: { type: string, enum: [admin, estudiante, docente] }
+ *               nombre: { type: string }
+ *               correo: { type: string }
  *     responses:
- *       200: { description: Role updated }
+ *       200: { description: User synced }
  */
-router.patch('/:id/role', verifyToken, requireRoles('admin'), c.updateRole);
-
-/**
- * @swagger
- * /users/{id}/status:
- *   patch:
- *     summary: Activate or deactivate user (admin only)
- *     tags: [Users]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: string }
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               activo: { type: boolean }
- *     responses:
- *       200: { description: Status updated }
- */
-router.patch('/:id/status', verifyToken, requireRoles('admin'), c.toggleStatus);
+router.post('/sync', verifyToken, sync);
 
 module.exports = router;
