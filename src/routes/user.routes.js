@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const c = require('../controllers/user.controller');
-const { verifyToken } = require('../middlewares/auth.middleware');
+const { verifyToken, requireRegisteredUser } = require('../middlewares/auth.middleware');
 const { requireRoles } = require('../middlewares/rbac.middleware');
 
 /**
@@ -28,8 +28,8 @@ const { requireRoles } = require('../middlewares/rbac.middleware');
  *     responses:
  *       200: { description: Updated profile }
  */
-router.get('/me', verifyToken, c.getMe);
-router.patch('/me', verifyToken, c.updateMe);
+router.get('/me', verifyToken, requireRegisteredUser, c.getMe);
+router.patch('/me', verifyToken, requireRegisteredUser, c.updateMe);
 
 /**
  * @swagger
@@ -49,7 +49,7 @@ router.patch('/me', verifyToken, c.updateMe);
  *     responses:
  *       200: { description: User list }
  */
-router.get('/', verifyToken, requireRoles('admin'), c.getAll);
+router.get('/', verifyToken, requireRegisteredUser, requireRoles('admin'), c.getAll);
 
 /**
  * @swagger
@@ -74,7 +74,7 @@ router.get('/', verifyToken, requireRoles('admin'), c.getAll);
  *     responses:
  *       200: { description: Role updated }
  */
-router.patch('/:id/role', verifyToken, requireRoles('admin'), c.updateRole);
+router.patch('/:id/role', verifyToken, requireRegisteredUser, requireRoles('admin'), c.updateRole);
 
 /**
  * @swagger
@@ -99,6 +99,6 @@ router.patch('/:id/role', verifyToken, requireRoles('admin'), c.updateRole);
  *     responses:
  *       200: { description: Status updated }
  */
-router.patch('/:id/status', verifyToken, requireRoles('admin'), c.toggleStatus);
+router.patch('/:id/status', verifyToken, requireRegisteredUser,requireRoles('admin'), c.toggleStatus);
 
 module.exports = router;

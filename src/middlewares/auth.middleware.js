@@ -11,39 +11,45 @@ const prisma = new PrismaClient();
 const verifyToken = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
+
     if (!authHeader?.startsWith('Bearer ')) {
       throw new UnauthorizedError('Missing or malformed authorization header');
     }
 
     const token = authHeader.split(' ')[1];
+
     const decoded = await admin.auth().verifyIdToken(token);
 
-    // Fetch user record from DB
+    // Optional DB lookup
     const dbUser = await prisma.usuario.findUnique({
       where: { firebase_uid: decoded.uid },
       include: { rol: true },
     });
 
-    if (!dbUser) {
-      throw new UnauthorizedError('User not registered in the system');
-    }
-
-    if (!dbUser.activo) {
-      throw new UnauthorizedError('Account is disabled');
-    }
-
     req.user = {
       uid: decoded.uid,
       email: decoded.email,
-      dbUser,
+      dbUser: dbUser || null,
     };
 
     next();
   } catch (err) {
     if (err.isOperational) return next(err);
-    // Firebase token errors
+
     next(new UnauthorizedError('Invalid or expired token'));
   }
+};
+
+const requireRegisteredUser = (req, _res, next) => {
+  if (!req.user.dbUser) {
+    return next(new UnauthorizedError('User not registered in the system'));
+  }
+
+  if (!req.user.dbUser.activo) {
+    return next(new UnauthorizedError('Account is disabled'));
+  }
+
+  next();
 };
 
 /**
@@ -72,4 +78,4 @@ const optionalToken = async (req, res, next) => {
   next();
 };
 
-module.exports = { verifyToken, optionalToken };
+module.exports = { verifyToken, requireRegisteredUser, optionalToken };

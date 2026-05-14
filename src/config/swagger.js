@@ -12,7 +12,7 @@ const options = {
     },
     servers: [
       { url: 'http://localhost:3000/api/v1', description: 'Development' },
-      { url: 'https://gameploy.saimers.dev/api/v1', description: 'Production' },
+      { url: 'https://api-gameploy.saimers.dev/api/v1', description: 'Production' },
     ],
     components: {
       securitySchemes: {

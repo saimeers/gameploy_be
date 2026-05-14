@@ -1,6 +1,6 @@
 const router = require('express').Router({ mergeParams: true });
 const c = require('../controllers/comment.controller');
-const { verifyToken } = require('../middlewares/auth.middleware');
+const { verifyToken, requireRegisteredUser } = require('../middlewares/auth.middleware');
 const { requireRoles } = require('../middlewares/rbac.middleware');
 
 /**
@@ -35,7 +35,7 @@ const { requireRoles } = require('../middlewares/rbac.middleware');
  *       201: { description: Comment added }
  */
 router.get('/', c.list);
-router.post('/', verifyToken, requireRoles('docente', 'admin'), c.add);
+router.post('/', verifyToken, requireRegisteredUser, requireRoles('docente', 'admin'), c.add);
 
 /**
  * @swagger

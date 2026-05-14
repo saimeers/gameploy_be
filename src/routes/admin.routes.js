@@ -1,11 +1,11 @@
 const router = require('express').Router();
 const c = require('../controllers/admin.controller');
 const commentController = require('../controllers/comment.controller');
-const { verifyToken } = require('../middlewares/auth.middleware');
+const { verifyToken, requireRegisteredUser } = require('../middlewares/auth.middleware');
 const { requireRoles } = require('../middlewares/rbac.middleware');
 
 // All admin routes require admin role
-router.use(verifyToken, requireRoles('admin'));
+router.use(verifyToken, requireRegisteredUser, requireRoles('admin'));
 
 /**
  * @swagger

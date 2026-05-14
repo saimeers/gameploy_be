@@ -1,7 +1,7 @@
 const router = require('express').Router({ mergeParams: true });
 const multer = require('multer');
 const c = require('../controllers/version.controller');
-const { verifyToken } = require('../middlewares/auth.middleware');
+const { verifyToken, requireRegisteredUser } = require('../middlewares/auth.middleware');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -46,8 +46,8 @@ const upload = multer({
  *     responses:
  *       201: { description: Version created }
  */
-router.get('/', verifyToken, c.list);
-router.post('/', verifyToken, c.create);
+router.get('/', verifyToken, requireRegisteredUser,c.list);
+router.post('/', verifyToken, requireRegisteredUser,c.create);
 
 /**
  * @swagger
@@ -81,7 +81,7 @@ router.post('/', verifyToken, c.create);
  *     responses:
  *       201: { description: File uploaded }
  */
-router.post('/:versionId/files', verifyToken, upload.single('file'), c.uploadFile);
+router.post('/:versionId/files', verifyToken, requireRegisteredUser, upload.single('file'), c.uploadFile);
 
 /**
  * @swagger
@@ -94,6 +94,6 @@ router.post('/:versionId/files', verifyToken, upload.single('file'), c.uploadFil
  *     responses:
  *       200: { description: Active version set }
  */
-router.patch('/:versionId/activate', verifyToken, c.setActive);
+router.patch('/:versionId/activate', verifyToken, requireRegisteredUser, c.setActive);
 
 module.exports = router;

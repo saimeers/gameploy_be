@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const c = require('../controllers/project.controller');
-const { verifyToken, optionalToken } = require('../middlewares/auth.middleware');
+const { verifyToken, requireRegisteredUser, optionalToken } = require('../middlewares/auth.middleware');
 const { requireRoles } = require('../middlewares/rbac.middleware');
 
 /**
@@ -27,7 +27,7 @@ const { requireRoles } = require('../middlewares/rbac.middleware');
  *     responses:
  *       201: { description: Project created }
  */
-router.post('/', verifyToken, requireRoles('estudiante', 'admin'), c.create);
+router.post('/', verifyToken, requireRegisteredUser, requireRoles('estudiante', 'admin'), c.create);
 
 /**
  * @swagger
@@ -47,7 +47,7 @@ router.post('/', verifyToken, requireRoles('estudiante', 'admin'), c.create);
  *     responses:
  *       200: { description: Project list }
  */
-router.get('/mine', verifyToken, c.getMine);
+router.get('/mine', verifyToken, requireRegisteredUser, c.getMine);
 
 /**
  * @swagger
@@ -95,8 +95,8 @@ router.get('/:slug', optionalToken, c.getBySlug);
  *     responses:
  *       200: { description: Deleted }
  */
-router.patch('/:id', verifyToken, c.update);
-router.delete('/:id', verifyToken, c.remove);
+router.patch('/:id', verifyToken, requireRegisteredUser, c.update);
+router.delete('/:id', verifyToken, requireRegisteredUser, c.remove);
 
 /**
  * @swagger
@@ -114,6 +114,6 @@ router.delete('/:id', verifyToken, c.remove);
  *     responses:
  *       200: { description: Project published }
  */
-router.patch('/:id/publish', verifyToken, c.publish);
+router.patch('/:id/publish', verifyToken, requireRegisteredUser, c.publish);
 
 module.exports = router;
