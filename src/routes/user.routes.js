@@ -99,25 +99,24 @@ router.patch('/:id/role', verifyToken, requireRegisteredUser, requireRoles('admi
  *     responses:
  *       200: { description: Status updated }
  */
-router.patch('/:id/status', verifyToken, requireRegisteredUser,requireRoles('admin'), c.toggleStatus);
+router.patch('/:id/status', verifyToken, requireRegisteredUser, requireRoles('admin'), c.toggleStatus);
 
 /**
  * @swagger
  * /users/check:
- * get:
- * summary: Verifica si un usuario existe por su email
- * tags: [Users]
- * security:
- * - bearerAuth: []
- * parameters:
- * - in: query
- * name: email
- * required: true
- * schema: { type: string }
- * responses:
- * 200: { description: Retorna true o false si existe }
+ *   get:
+ *     summary: Verifica si un usuario existe por su email
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *       name: email
+ *       required: true
+ *       schema: { type: string }
+ *     responses:
+ *       200: { description: Retorna true o false si existe }
  */
-// Usamos verifyToken porque ya tenemos el token de Google/Firebase, pero NO requireRegisteredUser
 router.get('/check', verifyToken, c.checkUser);
 
 module.exports = router;
