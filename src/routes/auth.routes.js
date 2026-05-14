@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { register, sync } = require('../controllers/auth.controller');
+const { register, sync, forgotPassword } = require('../controllers/auth.controller');
 const { verifyToken } = require('../middlewares/auth.middleware');
 
 /**
