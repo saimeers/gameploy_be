@@ -72,9 +72,18 @@ const generatePasswordResetLink = async (correo) => {
     handleCodeInApp: true,
   }
 
-  const link = await admin.auth().generatePasswordResetLink(correo, actionCodeSettings)
+  const firebaseLink = await admin.auth().generatePasswordResetLink(correo, actionCodeSettings)
 
-  await sendPasswordResetEmail({ toEmail: correo, nombre: user.nombre, resetLink: link })
+  const urlObj = new URL(firebaseLink)
+  const oobCode = urlObj.searchParams.get('oobCode')
+
+  const customLink = `${process.env.FRONTEND_URL}/reset-password?oobCode=${oobCode}`
+
+  await sendPasswordResetEmail({ 
+    toEmail: correo, 
+    nombre: user.nombre, 
+    resetLink: customLink 
+  })
 }
 
 module.exports = { registerUser, syncUser, generatePasswordResetLink };
