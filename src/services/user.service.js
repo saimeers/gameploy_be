@@ -60,4 +60,12 @@ const toggleUserStatus = async (userId, activo) => {
   });
 };
 
-module.exports = { getProfile, updateProfile, getAllUsers, updateUserRole, toggleUserStatus };
+const checkUserByEmail = async (correo) => {
+  const user = await prisma.usuario.findUnique({
+    where: { correo },
+    select: { id: true, correo: true } 
+  });
+  return !!user; 
+};
+
+module.exports = { getProfile, updateProfile, getAllUsers, updateUserRole, toggleUserStatus, checkUserByEmail };

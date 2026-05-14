@@ -38,4 +38,19 @@ const toggleStatus = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { getMe, updateMe, getAll, updateRole, toggleStatus };
+const checkUser = async (req, res, next) => {
+  try {
+    const { email } = req.query;
+    
+    if (!email) {
+      return res.status(400).json({ error: 'El email es requerido' });
+    }
+
+    const exists = await userService.checkUserByEmail(email);
+    success(res, { data: { exists }, message: 'Verificación de usuario completada' });
+  } catch (err) { 
+    next(err); 
+  }
+};
+
+module.exports = { getMe, updateMe, getAll, updateRole, toggleStatus, checkUser };
