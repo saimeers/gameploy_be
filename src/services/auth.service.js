@@ -59,4 +59,21 @@ const syncUser = async ({ firebase_uid, nombre, correo, rol_solicitado }) => {
   return usuario;
 };
 
-module.exports = { registerUser, syncUser };
+const generatePasswordResetLink = async (correo) => {
+  const user = await prisma.usuario.findUnique({ where: { correo } })
+  if (!user) {
+    // Don't reveal if email exists or not
+    return
+  }
+
+  const actionCodeSettings = {
+    url: `${process.env.FRONTEND_URL}/reset-password`,
+    handleCodeInApp: true,
+  }
+
+  const link = await admin.auth().generatePasswordResetLink(correo, actionCodeSettings)
+
+  await sendPasswordResetEmail({ toEmail: correo, nombre: user.nombre, resetLink: link })
+}
+
+module.exports = { registerUser, syncUser, generatePasswordResetLink };

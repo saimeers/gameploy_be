@@ -26,4 +26,15 @@ const sync = async (req, res, next) => {
   }
 };
 
-module.exports = { register, sync };
+const forgotPassword = async (req, res, next) => {
+  try {
+    const { correo } = req.body
+    await authService.generatePasswordResetLink(correo)
+    // Always respond 200 — don't reveal if email exists
+    success(res, { message: 'If that email exists, a reset link has been sent.' })
+  } catch (err) {
+    next(err)
+  }
+}
+
+module.exports = { register, sync, forgotPassword };

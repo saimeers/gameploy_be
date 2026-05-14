@@ -49,4 +49,24 @@ router.post('/register', verifyToken, register);
  */
 router.post('/sync', verifyToken, sync);
 
+/**
+ * @swagger
+ * /auth/forgot-password:
+ *   post:
+ *     summary: Send password reset email via Resend
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [correo]
+ *             properties:
+ *               correo: { type: string, format: email }
+ *     responses:
+ *       200: { description: Reset email sent (always 200) }
+ */
+router.post('/forgot-password', forgotPassword)
+
 module.exports = router;
