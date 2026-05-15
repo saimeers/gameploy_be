@@ -3,19 +3,21 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 const getStats = async () => {
-  const [totalProjects, totalUsers, totalVisits, recentProjects] = await Promise.all([
+  const rolPendiente = await prisma.rol.findUnique({ where: { nombre: 'pendiente' } })
+
+  const [totalProjects, totalUsers, totalVisits, pendingUsers, recentProjects] = await Promise.all([
     prisma.proyecto.count({ where: { estado: 'publicado' } }),
     prisma.usuario.count({ where: { activo: true } }),
     prisma.visita.count(),
+    prisma.usuario.count({ where: { id_rol: rolPendiente?.id } }),
     prisma.proyecto.findMany({
       where: { estado: 'publicado' },
       orderBy: { fecha_publicacion: 'desc' },
       take: 5,
       select: { id: true, nombre: true, slug: true, fecha_publicacion: true },
     }),
-  ]);
+  ])
 
-  // Visits per project (top 5)
   const topProjects = await prisma.visita.groupBy({
     by: ['id_proyecto'],
     _count: { id: true },
@@ -23,7 +25,7 @@ const getStats = async () => {
     take: 5,
   });
 
-  return { totalProjects, totalUsers, totalVisits, recentProjects, topProjects };
+  return { totalProjects, totalUsers, totalVisits, recentProjects, topProjects, pendingUsers };
 };
 
 const getAllProjects = async ({ page = 1, limit = 20 } = {}) => {
