@@ -7,6 +7,7 @@ const versionRoutes = require('./version.routes');
 const commentRoutes = require('./comment.routes');
 const searchRoutes = require('./search.routes');
 const adminRoutes = require('./admin.routes');
+const controlRoutes = require('./control.routes')
 
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
@@ -15,5 +16,6 @@ router.use('/projects/:projectId/versions', versionRoutes);
 router.use('/projects/:projectId/comments', commentRoutes);
 router.use('/search', searchRoutes);
 router.use('/admin', adminRoutes);
+router.use('/projects/:projectId/controls', controlRoutes)
 
 module.exports = router;
