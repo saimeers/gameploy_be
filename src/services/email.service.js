@@ -16,20 +16,17 @@ const baseEmailLayout = (content) => `
       body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f4f4f5; margin: 0; padding: 40px 20px; color: #3f3f46; }
       .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); }
       
-      /* Cabecera sin espacios (padding: 0) para que el logo llene todo */
       .header { 
         background-color: #ffffff; /* Fondo blanco por si la imagen tarda en cargar */
-        padding: 0; /* Eliminamos el espacio alrededor */
+        padding: 0; 
         text-align: center; 
-        border-bottom: 4px solid #7c3aed; 
-        line-height: 0; /* Truco de correos para evitar un margen fantasma debajo de la imagen */
+        line-height: 0;
         font-size: 0;
       }
       
-      /* La imagen ahora toma el 100% del espacio disponible */
       .header img { 
         width: 100%; 
-        max-width: 100%; /* Le quitamos el límite de 250px */
+        max-width: 100%; 
         height: auto;
         display: block; 
         margin: 0; 
