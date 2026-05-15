@@ -90,11 +90,13 @@ router.get(
                 return res.status(404).send('Game not found')
             }
 
+            // Get presigned URL
             const zipUrl = await getPresignedUrl(
                 archivo.ruta_storage,
                 300
             )
 
+            // Download ZIP
             const zipBuffer = await new Promise((resolve, reject) => {
                 const protocol = zipUrl.startsWith('https')
                     ? https
@@ -104,13 +106,16 @@ router.get(
 
                 protocol.get(zipUrl, resp => {
                     resp.on('data', chunk => chunks.push(chunk))
-                    resp.on('end', () =>
+
+                    resp.on('end', () => {
                         resolve(Buffer.concat(chunks))
-                    )
+                    })
+
                     resp.on('error', reject)
                 }).on('error', reject)
             })
 
+            // Open ZIP
             const zip = new AdmZip(zipBuffer)
 
             filename = decodeURIComponent(
@@ -119,16 +124,21 @@ router.get(
 
             const allEntries = zip.getEntries()
 
+            // Exact match
             let entry = allEntries.find(
                 e => e.entryName === filename
             )
 
+            // Without leading slash
             if (!entry) {
                 entry = allEntries.find(
-                    e => e.entryName === filename.replace(/^\/+/, '')
+                    e =>
+                        e.entryName ===
+                        filename.replace(/^\/+/, '')
                 )
             }
 
+            // Match inside root folder
             if (!entry) {
                 entry = allEntries.find(
                     e =>
@@ -151,10 +161,9 @@ router.get(
                     .send(`File not found in zip: ${filename}`)
             }
 
-            const ext = path
-                .extname(entry.entryName)
-                .toLowerCase()
+            const entryName = entry.entryName.toLowerCase()
 
+            // MIME TYPES
             const mimeTypes = {
                 '.html': 'text/html',
                 '.js': 'application/javascript',
@@ -173,12 +182,86 @@ router.get(
                 '.br': 'application/octet-stream',
             }
 
+            const ext = path
+                .extname(entryName)
+                .toLowerCase()
+
             const contentType =
-                mimeTypes[ext] || 'application/octet-stream'
+                mimeTypes[ext] ||
+                'application/octet-stream'
 
-            res.setHeader('Content-Type', contentType)
+            res.setHeader(
+                'Content-Type',
+                contentType
+            )
 
-            // Unity WebGL
+            // Unity-specific MIME fixes
+            if (entryName.endsWith('.wasm')) {
+                res.setHeader(
+                    'Content-Type',
+                    'application/wasm'
+                )
+            }
+
+            if (entryName.endsWith('.js')) {
+                res.setHeader(
+                    'Content-Type',
+                    'application/javascript'
+                )
+            }
+
+            if (entryName.endsWith('.css')) {
+                res.setHeader(
+                    'Content-Type',
+                    'text/css'
+                )
+            }
+
+            if (entryName.endsWith('.data')) {
+                res.setHeader(
+                    'Content-Type',
+                    'application/octet-stream'
+                )
+            }
+
+            // GZIP support
+            if (entryName.endsWith('.gz')) {
+                res.setHeader(
+                    'Content-Encoding',
+                    'gzip'
+                )
+
+                if (entryName.includes('.wasm')) {
+                    res.setHeader(
+                        'Content-Type',
+                        'application/wasm'
+                    )
+                }
+
+                if (entryName.includes('.js')) {
+                    res.setHeader(
+                        'Content-Type',
+                        'application/javascript'
+                    )
+                }
+
+                if (entryName.includes('.data')) {
+                    res.setHeader(
+                        'Content-Type',
+                        'application/octet-stream'
+                    )
+                }
+            }
+
+            // Brotli support
+            if (entryName.endsWith('.br')) {
+                res.setHeader(
+                    'Content-Encoding',
+                    'br'
+                )
+            }
+
+            // CORS + Unity headers
             res.setHeader(
                 'Access-Control-Allow-Origin',
                 '*'
@@ -189,15 +272,17 @@ router.get(
                 'cross-origin'
             )
 
-            // Compression support
-            if (ext === '.gz') {
-                res.setHeader('Content-Encoding', 'gzip')
-            }
+            res.setHeader(
+                'Cross-Origin-Embedder-Policy',
+                'require-corp'
+            )
 
-            if (ext === '.br') {
-                res.setHeader('Content-Encoding', 'br')
-            }
+            res.setHeader(
+                'Cross-Origin-Opener-Policy',
+                'same-origin'
+            )
 
+            // Send file
             res.send(entry.getData())
 
         } catch (err) {
