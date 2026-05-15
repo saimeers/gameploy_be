@@ -104,19 +104,25 @@ router.get(/^\/play\/([^/]+)\/([^/]+)\/(.+)$/, async (req, res, next) => {
 
         const zip = new AdmZip(zipBuffer)
 
-        // Auto-detect root index.html
+        // Detect root folder automatically
+        const entries = zip.getEntries()
+
+        const indexEntry = entries.find(e =>
+            e.entryName.toLowerCase().endsWith('/index.html')
+        )
+
+        let rootFolder = ''
+
+        if (indexEntry) {
+            rootFolder = indexEntry.entryName.replace(/index\.html$/i, '')
+        }
+
+        // Build final path
         let targetFile = filename
 
-        if (filename === 'index.html') {
-            const indexEntry = zip
-                .getEntries()
-                .find(e =>
-                    e.entryName.toLowerCase().endsWith('/index.html')
-                )
-
-            if (indexEntry) {
-                targetFile = indexEntry.entryName
-            }
+        // If file is not already prefixed with root folder
+        if (rootFolder && !filename.startsWith(rootFolder)) {
+            targetFile = `${rootFolder}${filename}`
         }
 
         const cleanFilename = targetFile.replace(/^\/+/, '')
