@@ -145,8 +145,8 @@ router.get(/^\/play\/([^/]+)\/([^/]+)\/(.+)$/, async (req, res, next) => {
         res.setHeader('Content-Type', contentType)
 
         // Required for Unity WebGL
-        res.setHeader('Cross-Origin-Opener-Policy', 'same-origin')
-        res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp')
+        res.setHeader('Access-Control-Allow-Origin', '*')
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
 
         res.send(entry.getData())
 

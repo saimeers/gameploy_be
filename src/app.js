@@ -20,7 +20,14 @@ const app = express();
 app.set('trust proxy', 1);
 
 // ── Security headers
-app.use(helmet());
+app.use(
+  helmet({
+    crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: false,
+    contentSecurityPolicy: false,
+    frameguard: false,
+  })
+);
 
 // ── CORS
 app.use(cors({
