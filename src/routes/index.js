@@ -65,7 +65,6 @@ router.get('/public/files/url', async (req, res, next) => {
   try {
     const { key } = req.query
     if (!key) return res.status(400).json({ success: false, message: 'key required' })
-    const { getPresignedUrl } = require('./services/storage.service')
     const url = await getPresignedUrl(key, 3600)
     res.json({ success: true, data: { url } })
   } catch (err) { next(err) }
