@@ -96,4 +96,30 @@ router.post('/:versionId/files', verifyToken, requireRegisteredUser, upload.sing
  */
 router.patch('/:versionId/activate', verifyToken, requireRegisteredUser, c.setActive);
 
+/**
+ * @swagger
+ * /projects/{projectId}/versions/{versionId}/files/{fileId}:
+ *   delete:
+ *     summary: Permanently delete a file
+ *     tags: [Versions]
+ *   patch:
+ *     summary: Toggle file active status
+ *     tags: [Versions]
+ */
+router.delete('/:versionId/files/:fileId', verifyToken, async (req, res, next) => {
+  try {
+    const { PrismaClient } = require('@prisma/client')
+    const prisma = new PrismaClient()
+    const { deleteFile } = require('../services/storage.service')
+
+    const archivo = await prisma.archivo.findUnique({ where: { id: req.params.fileId } })
+    if (!archivo) return res.status(404).json({ success: false, message: 'File not found' })
+
+    await deleteFile(archivo.ruta_storage)
+    await prisma.archivo.delete({ where: { id: req.params.fileId } })
+
+    res.json({ success: true, message: 'File deleted' })
+  } catch (err) { next(err) }
+})
+
 module.exports = router;

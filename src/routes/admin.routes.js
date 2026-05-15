@@ -1,8 +1,10 @@
 const router = require('express').Router();
+const { PrismaClient } = require('@prisma/client')
 const c = require('../controllers/admin.controller');
 const commentController = require('../controllers/comment.controller');
 const { verifyToken, requireRegisteredUser } = require('../middlewares/auth.middleware');
 const { requireRoles } = require('../middlewares/rbac.middleware');
+const prisma = new PrismaClient()
 
 // All admin routes require admin role
 router.use(verifyToken, requireRegisteredUser, requireRoles('admin'));
@@ -119,5 +121,77 @@ router.patch('/comments/:id/moderate', commentController.moderate);
  *       409: { description: User is not pending }
  */
 router.patch('/users/:id/approve', c.approveUser);
+
+// ── Categorias
+/**
+ * @swagger
+ * /admin/categorias:
+ *   get:
+ *     summary: List all categories
+ *     tags: [Admin]
+ *   post:
+ *     summary: Create category
+ *     tags: [Admin]
+ */
+router.get('/categorias', async (req, res, next) => {
+  try {
+    const cats = await prisma.categoria.findMany({ orderBy: { nombre: 'asc' } })
+    res.json({ success: true, data: cats })
+  } catch (err) { next(err) }
+})
+
+router.post('/categorias', async (req, res, next) => {
+  try {
+    const cat = await prisma.categoria.create({ data: req.body })
+    res.status(201).json({ success: true, data: cat })
+  } catch (err) { next(err) }
+})
+
+router.patch('/categorias/:id', async (req, res, next) => {
+  try {
+    const cat = await prisma.categoria.update({
+      where: { id: Number(req.params.id) }, data: req.body,
+    })
+    res.json({ success: true, data: cat })
+  } catch (err) { next(err) }
+})
+
+router.delete('/categorias/:id', async (req, res, next) => {
+  try {
+    await prisma.categoria.delete({ where: { id: Number(req.params.id) } })
+    res.json({ success: true, message: 'Deleted' })
+  } catch (err) { next(err) }
+})
+
+// ── Etiquetas
+router.get('/etiquetas', async (req, res, next) => {
+  try {
+    const tags = await prisma.etiqueta.findMany({ orderBy: { nombre: 'asc' } })
+    res.json({ success: true, data: tags })
+  } catch (err) { next(err) }
+})
+
+router.post('/etiquetas', async (req, res, next) => {
+  try {
+    const tag = await prisma.etiqueta.create({ data: req.body })
+    res.status(201).json({ success: true, data: tag })
+  } catch (err) { next(err) }
+})
+
+router.patch('/etiquetas/:id', async (req, res, next) => {
+  try {
+    const tag = await prisma.etiqueta.update({
+      where: { id: Number(req.params.id) }, data: req.body,
+    })
+    res.json({ success: true, data: tag })
+  } catch (err) { next(err) }
+})
+
+router.delete('/etiquetas/:id', async (req, res, next) => {
+  try {
+    await prisma.etiqueta.delete({ where: { id: Number(req.params.id) } })
+    res.json({ success: true, message: 'Deleted' })
+  } catch (err) { next(err) }
+})
 
 module.exports = router;
