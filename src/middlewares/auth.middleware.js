@@ -48,8 +48,8 @@ const requireRegisteredUser = (req, _res, next) => {
     return next(new UnauthorizedError('Account is disabled'));
   }
 
-  if (dbUser.rol.nombre === 'pendiente') {
-    throw new AppError('Your account is pending admin approval', 403);
+  if (req.user.dbUser.rol.nombre === 'pendiente') {
+    return next(new UnauthorizedError('Your account is pending admin approval'));
   }
 
   next();
