@@ -71,12 +71,11 @@ router.get('/public/files/url', async (req, res, next) => {
 })
 
 // Serve WebGL game files from zip in bucket
-router.get(/^\/play\/([^/]+)\/([^/]+)\/(.+)$/, async (req, res, next) => {
+router.get('/play/:projectId/:versionId/*', async (req, res, next) => {
     try {
 
-        const projectId = req.params[0]
-        const versionId = req.params[1]
-        const filename = req.params[2]
+        const { projectId, versionId } = req.params
+        const filename = req.params[0]
 
         const archivo = await prisma.archivo.findFirst({
             where: {
