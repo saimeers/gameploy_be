@@ -4,8 +4,6 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM = process.env.RESEND_FROM_EMAIL;
 const APP_NAME = process.env.APP_NAME || 'Gameploy';
 
-// URL de tu logo público (Asegúrate de tenerlo en el frontend o un CDN)
-// Nota: Te recomiendo usar un .png en lugar de .svg para evitar errores en Outlook/Gmail
 const LOGO_URL = `${process.env.FRONTEND_URL}/logo_viral.png`;
 
 
@@ -18,14 +16,23 @@ const baseEmailLayout = (content) => `
       body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f4f4f5; margin: 0; padding: 40px 20px; color: #3f3f46; }
       .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); }
       
-      /* Cabecera ajustada para tu logo */
-      .header { background-color: #18181b; padding: 30px 20px; text-align: center; border-bottom: 4px solid #7c3aed; }
+      /* Cabecera sin espacios (padding: 0) para que el logo llene todo */
+      .header { 
+        background-color: #ffffff; /* Fondo blanco por si la imagen tarda en cargar */
+        padding: 0; /* Eliminamos el espacio alrededor */
+        text-align: center; 
+        border-bottom: 4px solid #7c3aed; 
+        line-height: 0; /* Truco de correos para evitar un margen fantasma debajo de la imagen */
+        font-size: 0;
+      }
+      
+      /* La imagen ahora toma el 100% del espacio disponible */
       .header img { 
         width: 100%; 
-        max-width: 250px; /* Restringe el tamaño para que no abrume el correo */
-        height: auto;     /* Mantiene tu proporción exacta de 374x171 */
+        max-width: 100%; /* Le quitamos el límite de 250px */
+        height: auto;
         display: block; 
-        margin: 0 auto; 
+        margin: 0; 
       }
       
       .content { padding: 40px 30px; font-size: 16px; line-height: 1.6; }
@@ -38,7 +45,7 @@ const baseEmailLayout = (content) => `
   <body>
     <div class="container">
       <div class="header">
-        <img src="${LOGO_URL}" width="374" height="171" alt="Semillero VIRAL" />
+        <img src="${LOGO_URL}" width="600" alt="Semillero VIRAL" />
       </div>
       <div class="content">
         ${content}
