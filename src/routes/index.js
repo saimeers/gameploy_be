@@ -71,103 +71,116 @@ router.get('/public/files/url', async (req, res, next) => {
 })
 
 // Serve WebGL game files from zip in bucket
-router.get('/play/:projectId/:versionId/*', async (req, res, next) => {
+router.get(
+  /^\/play\/([^/]+)\/([^/]+)\/(.+)$/,
+  async (req, res, next) => {
     try {
+      const projectId = req.params[0]
+      const versionId = req.params[1]
+      let filename = req.params[2]
 
-        const { projectId, versionId } = req.params
-        const filename = req.params[0]
-
-        const archivo = await prisma.archivo.findFirst({
-            where: {
-                id_version: versionId,
-                tipo: 'juego_webgl'
-            }
-        })
-
-        if (!archivo) {
-            return res.status(404).send('Game not found')
+      const archivo = await prisma.archivo.findFirst({
+        where: {
+          id_version: versionId,
+          tipo: 'juego_webgl'
         }
+      })
 
-        const zipUrl = await getPresignedUrl(archivo.ruta_storage, 300)
+      if (!archivo) {
+        return res.status(404).send('Game not found')
+      }
 
-        const zipBuffer = await new Promise((resolve, reject) => {
-            const protocol = zipUrl.startsWith('https') ? https : http
-            const chunks = []
+      const zipUrl = await getPresignedUrl(
+        archivo.ruta_storage,
+        300
+      )
 
-            protocol.get(zipUrl, resp => {
-                resp.on('data', chunk => chunks.push(chunk))
-                resp.on('end', () => resolve(Buffer.concat(chunks)))
-                resp.on('error', reject)
-            }).on('error', reject)
-        })
+      const zipBuffer = await new Promise((resolve, reject) => {
+        const protocol = zipUrl.startsWith('https')
+          ? https
+          : http
 
-        const zip = new AdmZip(zipBuffer)
+        const chunks = []
 
-        // Detect root folder automatically
-        const entries = zip.getEntries()
+        protocol.get(zipUrl, resp => {
+          resp.on('data', chunk => chunks.push(chunk))
+          resp.on('end', () =>
+            resolve(Buffer.concat(chunks))
+          )
+          resp.on('error', reject)
+        }).on('error', reject)
+      })
 
-        const indexEntry = entries.find(e =>
-            e.entryName.toLowerCase().endsWith('/index.html')
+      const zip = new AdmZip(zipBuffer)
+
+      filename = decodeURIComponent(
+        filename.replace(/^\/+/, '')
+      )
+
+      // Buscar exacto
+      let entry = zip.getEntry(filename)
+
+      // Si no existe, buscar por final del path
+      if (!entry) {
+        entry = zip
+          .getEntries()
+          .find(e => e.entryName.endsWith(filename))
+      }
+
+      if (!entry) {
+        console.log(
+          'ZIP ENTRIES:',
+          zip.getEntries().map(e => e.entryName)
         )
 
-        let rootFolder = ''
+        return res
+          .status(404)
+          .send(`File not found in zip: ${filename}`)
+      }
 
-        if (indexEntry) {
-            rootFolder = indexEntry.entryName.replace(/index\.html$/i, '')
-        }
+      const ext = path
+        .extname(entry.entryName)
+        .toLowerCase()
 
-        // Build final path
-        let targetFile = filename
+      const mimeTypes = {
+        '.html': 'text/html',
+        '.js': 'application/javascript',
+        '.mjs': 'application/javascript',
+        '.wasm': 'application/wasm',
+        '.data': 'application/octet-stream',
+        '.css': 'text/css',
+        '.json': 'application/json',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.svg': 'image/svg+xml',
+        '.ico': 'image/x-icon',
+        '.txt': 'text/plain',
+        '.gz': 'application/gzip',
+        '.br': 'application/octet-stream',
+      }
 
-        // If file is not already prefixed with root folder
-        if (rootFolder && !filename.startsWith(rootFolder)) {
-            targetFile = `${rootFolder}${filename}`
-        }
+      res.setHeader(
+        'Content-Type',
+        mimeTypes[ext] || 'application/octet-stream'
+      )
 
-        const cleanFilename = targetFile.replace(/^\/+/, '')
+      res.setHeader(
+        'Access-Control-Allow-Origin',
+        '*'
+      )
 
-        const entry =
-            zip.getEntry(cleanFilename) ||
-            zip.getEntry(decodeURIComponent(cleanFilename))
+      res.setHeader(
+        'Cross-Origin-Resource-Policy',
+        'cross-origin'
+      )
 
-        if (!entry) {
-            return res.status(404).send(`File not found in zip: ${cleanFilename}`)
-        }
-
-        const ext = path.extname(cleanFilename).toLowerCase()
-
-        const mimeTypes = {
-            '.html': 'text/html',
-            '.js': 'application/javascript',
-            '.mjs': 'application/javascript',
-            '.wasm': 'application/wasm',
-            '.data': 'application/octet-stream',
-            '.css': 'text/css',
-            '.json': 'application/json',
-            '.png': 'image/png',
-            '.jpg': 'image/jpeg',
-            '.jpeg': 'image/jpeg',
-            '.svg': 'image/svg+xml',
-            '.ico': 'image/x-icon',
-            '.txt': 'text/plain',
-            '.gz': 'application/gzip',
-            '.br': 'application/octet-stream',
-        }
-
-        const contentType =
-            mimeTypes[ext] ?? 'application/octet-stream'
-
-        res.setHeader('Content-Type', contentType)
-
-        // Unity WebGL
-        res.setHeader('Access-Control-Allow-Origin', '*')
-        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
-
-        res.send(entry.getData())
+      res.send(entry.getData())
 
     } catch (err) {
-        next(err)
+      next(err)
     }
-})
+  }
+)
 
 module.exports = router;
