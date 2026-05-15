@@ -104,12 +104,22 @@ router.get(/^\/play\/([^/]+)\/([^/]+)\/(.+)$/, async (req, res, next) => {
 
         const zip = new AdmZip(zipBuffer)
 
-        console.log(
-            'ZIP ENTRIES:',
-            zip.getEntries().map(e => e.entryName)
-        )
+        // Auto-detect root index.html
+        let targetFile = filename
 
-        const cleanFilename = filename.replace(/^\/+/, '')
+        if (filename === 'index.html') {
+            const indexEntry = zip
+                .getEntries()
+                .find(e =>
+                    e.entryName.toLowerCase().endsWith('/index.html')
+                )
+
+            if (indexEntry) {
+                targetFile = indexEntry.entryName
+            }
+        }
+
+        const cleanFilename = targetFile.replace(/^\/+/, '')
 
         const entry =
             zip.getEntry(cleanFilename) ||
@@ -144,7 +154,7 @@ router.get(/^\/play\/([^/]+)\/([^/]+)\/(.+)$/, async (req, res, next) => {
 
         res.setHeader('Content-Type', contentType)
 
-        // Required for Unity WebGL
+        // Unity WebGL
         res.setHeader('Access-Control-Allow-Origin', '*')
         res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
 
