@@ -71,224 +71,88 @@ router.get('/public/files/url', async (req, res, next) => {
 })
 
 // Serve WebGL game files from zip in bucket
-router.get(
-    /^\/play\/([^/]+)\/([^/]+)\/(.+)$/,
-    async (req, res, next) => {
-        try {
-            const projectId = req.params[0]
-            const versionId = req.params[1]
-            let filename = req.params[2]
+router.get(/^\/play\/([^/]+)\/([^/]+)\/(.+)$/, async (req, res, next) => {
+    try {
 
-            const archivo = await prisma.archivo.findFirst({
-                where: {
-                    id_version: versionId,
-                    tipo: 'juego_webgl'
-                }
-            })
+        const projectId = req.params[0]
+        const versionId = req.params[1]
+        const filename = req.params[2]
 
-            if (!archivo) {
-                return res.status(404).send('Game not found')
+        const archivo = await prisma.archivo.findFirst({
+            where: {
+                id_version: versionId,
+                tipo: 'juego_webgl'
             }
+        })
 
-            // Get presigned URL
-            const zipUrl = await getPresignedUrl(
-                archivo.ruta_storage,
-                300
-            )
-
-            // Download ZIP
-            const zipBuffer = await new Promise((resolve, reject) => {
-                const protocol = zipUrl.startsWith('https')
-                    ? https
-                    : http
-
-                const chunks = []
-
-                protocol.get(zipUrl, resp => {
-                    resp.on('data', chunk => chunks.push(chunk))
-
-                    resp.on('end', () => {
-                        resolve(Buffer.concat(chunks))
-                    })
-
-                    resp.on('error', reject)
-                }).on('error', reject)
-            })
-
-            // Open ZIP
-            const zip = new AdmZip(zipBuffer)
-
-            filename = decodeURIComponent(
-                filename.replace(/^\/+/, '')
-            )
-
-            const allEntries = zip.getEntries()
-
-            // Exact match
-            let entry = allEntries.find(
-                e => e.entryName === filename
-            )
-
-            // Without leading slash
-            if (!entry) {
-                entry = allEntries.find(
-                    e =>
-                        e.entryName ===
-                        filename.replace(/^\/+/, '')
-                )
-            }
-
-            // Match inside root folder
-            if (!entry) {
-                entry = allEntries.find(
-                    e =>
-                        e.entryName.endsWith('/' + filename) ||
-                        e.entryName.endsWith(filename)
-                )
-            }
-
-            console.log('REQUESTED FILE:', filename)
-            console.log('MATCH:', entry?.entryName)
-
-            if (!entry) {
-                console.log(
-                    'ZIP ENTRIES:',
-                    allEntries.map(e => e.entryName)
-                )
-
-                return res
-                    .status(404)
-                    .send(`File not found in zip: ${filename}`)
-            }
-
-            const entryName = entry.entryName.toLowerCase()
-
-            // MIME TYPES
-            const mimeTypes = {
-                '.html': 'text/html',
-                '.js': 'application/javascript',
-                '.mjs': 'application/javascript',
-                '.wasm': 'application/wasm',
-                '.data': 'application/octet-stream',
-                '.css': 'text/css',
-                '.json': 'application/json',
-                '.png': 'image/png',
-                '.jpg': 'image/jpeg',
-                '.jpeg': 'image/jpeg',
-                '.svg': 'image/svg+xml',
-                '.ico': 'image/x-icon',
-                '.txt': 'text/plain',
-                '.gz': 'application/gzip',
-                '.br': 'application/octet-stream',
-            }
-
-            const ext = path
-                .extname(entryName)
-                .toLowerCase()
-
-            const contentType =
-                mimeTypes[ext] ||
-                'application/octet-stream'
-
-            res.setHeader(
-                'Content-Type',
-                contentType
-            )
-
-            // Unity-specific MIME fixes
-            if (entryName.endsWith('.wasm')) {
-                res.setHeader(
-                    'Content-Type',
-                    'application/wasm'
-                )
-            }
-
-            if (entryName.endsWith('.js')) {
-                res.setHeader(
-                    'Content-Type',
-                    'application/javascript'
-                )
-            }
-
-            if (entryName.endsWith('.css')) {
-                res.setHeader(
-                    'Content-Type',
-                    'text/css'
-                )
-            }
-
-            if (entryName.endsWith('.data')) {
-                res.setHeader(
-                    'Content-Type',
-                    'application/octet-stream'
-                )
-            }
-
-            // GZIP support
-            if (entryName.endsWith('.gz')) {
-                res.setHeader(
-                    'Content-Encoding',
-                    'gzip'
-                )
-
-                if (entryName.includes('.wasm')) {
-                    res.setHeader(
-                        'Content-Type',
-                        'application/wasm'
-                    )
-                }
-
-                if (entryName.includes('.js')) {
-                    res.setHeader(
-                        'Content-Type',
-                        'application/javascript'
-                    )
-                }
-
-                if (entryName.includes('.data')) {
-                    res.setHeader(
-                        'Content-Type',
-                        'application/octet-stream'
-                    )
-                }
-            }
-
-            // Brotli support
-            if (entryName.endsWith('.br')) {
-                res.setHeader(
-                    'Content-Encoding',
-                    'br'
-                )
-            }
-
-            // CORS + Unity headers
-            res.setHeader(
-                'Access-Control-Allow-Origin',
-                '*'
-            )
-
-            res.setHeader(
-                'Cross-Origin-Resource-Policy',
-                'cross-origin'
-            )
-
-            res.setHeader(
-                'Cross-Origin-Embedder-Policy',
-                'require-corp'
-            )
-
-            res.setHeader(
-                'Cross-Origin-Opener-Policy',
-                'same-origin'
-            )
-
-            // Send file
-            res.send(entry.getData())
-
-        } catch (err) {
-            next(err)
+        if (!archivo) {
+            return res.status(404).send('Game not found')
         }
+
+        const zipUrl = await getPresignedUrl(archivo.ruta_storage, 300)
+
+        const zipBuffer = await new Promise((resolve, reject) => {
+            const protocol = zipUrl.startsWith('https') ? https : http
+            const chunks = []
+
+            protocol.get(zipUrl, resp => {
+                resp.on('data', chunk => chunks.push(chunk))
+                resp.on('end', () => resolve(Buffer.concat(chunks)))
+                resp.on('error', reject)
+            }).on('error', reject)
+        })
+
+        const zip = new AdmZip(zipBuffer)
+
+        console.log(
+            'ZIP ENTRIES:',
+            zip.getEntries().map(e => e.entryName)
+        )
+
+        const cleanFilename = filename.replace(/^\/+/, '')
+
+        const entry =
+            zip.getEntry(cleanFilename) ||
+            zip.getEntry(decodeURIComponent(cleanFilename))
+
+        if (!entry) {
+            return res.status(404).send(`File not found in zip: ${cleanFilename}`)
+        }
+
+        const ext = path.extname(cleanFilename).toLowerCase()
+
+        const mimeTypes = {
+            '.html': 'text/html',
+            '.js': 'application/javascript',
+            '.mjs': 'application/javascript',
+            '.wasm': 'application/wasm',
+            '.data': 'application/octet-stream',
+            '.css': 'text/css',
+            '.json': 'application/json',
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.svg': 'image/svg+xml',
+            '.ico': 'image/x-icon',
+            '.txt': 'text/plain',
+            '.gz': 'application/gzip',
+            '.br': 'application/octet-stream',
+        }
+
+        const contentType =
+            mimeTypes[ext] ?? 'application/octet-stream'
+
+        res.setHeader('Content-Type', contentType)
+
+        // Required for Unity WebGL
+        res.setHeader('Access-Control-Allow-Origin', '*')
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
+
+        res.send(entry.getData())
+
+    } catch (err) {
+        next(err)
     }
-)
+})
 
 module.exports = router;
