@@ -23,6 +23,7 @@
     "@aws-sdk/lib-storage": "^3.1046.0",
     "@aws-sdk/s3-request-presigner": "^3.1046.0",
     "@prisma/client": "^6.19.3",
+    "adm-zip": "^0.5.17",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",

@@ -2,6 +2,12 @@ const router = require('express').Router();
 const { PrismaClient } = require('@prisma/client')
 const prisma = new PrismaClient()
 
+const { getPresignedUrl } = require('../services/storage.service')
+const AdmZip = require('adm-zip')
+const path = require('path')
+const https = require('https')
+const http = require('http')
+
 const authRoutes = require('./auth.routes');
 const userRoutes = require('./user.routes');
 const projectRoutes = require('./project.routes');
@@ -62,6 +68,58 @@ router.get('/public/files/url', async (req, res, next) => {
     const { getPresignedUrl } = require('./services/storage.service')
     const url = await getPresignedUrl(key, 3600)
     res.json({ success: true, data: { url } })
+  } catch (err) { next(err) }
+})
+
+// Serve WebGL game files from zip in bucket
+router.get('/play/:projectId/:versionId/:filename(*)', async (req, res, next) => {
+  try {
+    const { projectId, versionId, filename } = req.params
+
+    const archivo = await prisma.archivo.findFirst({
+      where: { id_version: versionId, tipo: 'juego_webgl' }
+    })
+    if (!archivo) return res.status(404).send('Game not found')
+
+    // Get presigned URL for the zip
+    const zipUrl = await getPresignedUrl(archivo.ruta_storage, 300)
+
+    // Download zip in memory
+    const zipBuffer = await new Promise((resolve, reject) => {
+      const protocol = zipUrl.startsWith('https') ? https : http
+      const chunks = []
+      protocol.get(zipUrl, resp => {
+        resp.on('data', chunk => chunks.push(chunk))
+        resp.on('end', () => resolve(Buffer.concat(chunks)))
+        resp.on('error', reject)
+      }).on('error', reject)
+    })
+
+    const zip = new AdmZip(zipBuffer)
+    const entry = zip.getEntry(filename) || zip.getEntry(filename.replace(/^\//, ''))
+
+    if (!entry) return res.status(404).send(`File not found in zip: ${filename}`)
+
+    // Set content type
+    const ext = path.extname(filename).toLowerCase()
+    const mimeTypes = {
+      '.html': 'text/html',
+      '.js':   'application/javascript',
+      '.wasm': 'application/wasm',
+      '.data': 'application/octet-stream',
+      '.css':  'text/css',
+      '.png':  'image/png',
+      '.jpg':  'image/jpeg',
+      '.ico':  'image/x-icon',
+      '.gz':   'application/gzip',
+      '.br':   'application/x-br',
+    }
+
+    const contentType = mimeTypes[ext] ?? 'application/octet-stream'
+    res.setHeader('Content-Type', contentType)
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin')
+    res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp')
+    res.send(entry.getData())
   } catch (err) { next(err) }
 })
 
