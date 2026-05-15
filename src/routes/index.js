@@ -104,12 +104,28 @@ router.get(/^\/play\/([^/]+)\/([^/]+)\/(.+)$/, async (req, res, next) => {
 
         const zip = new AdmZip(zipBuffer)
 
-        console.log(
-            'ZIP ENTRIES:',
-            zip.getEntries().map(e => e.entryName)
+        // Detect root folder automatically
+        const entries = zip.getEntries()
+
+        const indexEntry = entries.find(e =>
+            e.entryName.toLowerCase().endsWith('/index.html')
         )
 
-        const cleanFilename = filename.replace(/^\/+/, '')
+        let rootFolder = ''
+
+        if (indexEntry) {
+            rootFolder = indexEntry.entryName.replace(/index\.html$/i, '')
+        }
+
+        // Build final path
+        let targetFile = filename
+
+        // If file is not already prefixed with root folder
+        if (rootFolder && !filename.startsWith(rootFolder)) {
+            targetFile = `${rootFolder}${filename}`
+        }
+
+        const cleanFilename = targetFile.replace(/^\/+/, '')
 
         const entry =
             zip.getEntry(cleanFilename) ||
@@ -144,7 +160,7 @@ router.get(/^\/play\/([^/]+)\/([^/]+)\/(.+)$/, async (req, res, next) => {
 
         res.setHeader('Content-Type', contentType)
 
-        // Required for Unity WebGL
+        // Unity WebGL
         res.setHeader('Access-Control-Allow-Origin', '*')
         res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
 
