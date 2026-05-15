@@ -25,18 +25,37 @@ const uploadVersionFile = async (versionId, userId, file, fileType) => {
     where: { id: versionId },
     include: { proyecto: true },
   });
-  if (!version) throw new NotFoundError('Version not found');
-  if (version.proyecto.id_usuario !== userId) throw new ForbiddenError('Not authorized');
 
-  const key = buildStorageKey(version.id_proyecto, versionId, file.originalname);
+  if (!version) {
+    throw new NotFoundError('Version not found');
+  }
 
-  await uploadFile({ buffer: file.buffer, key, mimetype: file.mimetype });
+  if (version.proyecto.id_usuario !== userId) {
+    throw new ForbiddenError('Not authorized');
+  }
+
+  const finalFilename =
+    fileType === 'juego_webgl'
+      ? 'game.zip'
+      : file.originalname;
+
+  const key = buildStorageKey(
+    version.id_proyecto,
+    versionId,
+    finalFilename
+  );
+
+  await uploadFile({
+    buffer: file.buffer,
+    key,
+    mimetype: file.mimetype,
+  });
 
   return prisma.archivo.create({
     data: {
       id_version: versionId,
       tipo: fileType,
-      nombre_archivo: file.originalname,
+      nombre_archivo: finalFilename,
       ruta_storage: key,
       tamanio_bytes: file.size,
     },
