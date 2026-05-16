@@ -1,4 +1,5 @@
 const { PrismaClient } = require('@prisma/client');
+const admin = require('../config/firebase')
 const { NotFoundError, ForbiddenError } = require('../utils/errors');
 
 const prisma = new PrismaClient();
@@ -29,6 +30,7 @@ const updateProfile = async (userId, { nombre }) => {
 
 const getAllUsers = async ({ page = 1, limit = 20 } = {}) => {
   const skip = (page - 1) * limit;
+
   const [users, total] = await Promise.all([
     prisma.usuario.findMany({
       skip,
@@ -38,7 +40,38 @@ const getAllUsers = async ({ page = 1, limit = 20 } = {}) => {
     }),
     prisma.usuario.count(),
   ]);
-  return { users, total, page, limit };
+
+  const usersWithPhotos = await Promise.all(
+    users.map(async (user) => {
+      try {
+        if (!user.firebase_uid) {
+          return {
+            ...user,
+            foto_perfil: null,
+          };
+        }
+
+        const firebaseUser = await admin.auth().getUser(user.firebase_uid);
+
+        return {
+          ...user,
+          foto_perfil: firebaseUser.photoURL ?? null,
+        };
+      } catch (err) {
+        return {
+          ...user,
+          foto_perfil: null,
+        };
+      }
+    })
+  );
+
+  return {
+    users: usersWithPhotos,
+    total,
+    page,
+    limit,
+  };
 };
 
 const updateUserRole = async (userId, roleName) => {
@@ -63,9 +96,9 @@ const toggleUserStatus = async (userId, activo) => {
 const checkUserByEmail = async (correo) => {
   const user = await prisma.usuario.findUnique({
     where: { correo },
-    select: { id: true, correo: true } 
+    select: { id: true, correo: true }
   });
-  return !!user; 
+  return !!user;
 };
 
 module.exports = { getProfile, updateProfile, getAllUsers, updateUserRole, toggleUserStatus, checkUserByEmail };

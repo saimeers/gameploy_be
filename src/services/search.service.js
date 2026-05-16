@@ -24,7 +24,7 @@ const searchProjects = async ({ q, categoria, etiquetas = [], page = 1, limit = 
         categoria: true,
         etiquetas: { include: { etiqueta: true } },
         usuario: { select: { nombre: true } },
-        _count: { select: { visitas: true } },
+        _count: { select: { visitas: true, comentarios: true } },
         versiones: {
           where: { es_activa: true },
           include: { archivos: { where: { tipo: 'portada' }, take: 1 } },
