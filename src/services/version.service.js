@@ -90,4 +90,35 @@ const getVersions = async (projectId) => {
   });
 };
 
-module.exports = { createVersion, uploadVersionFile, setActiveVersion, getVersions };
+const replaceOrAddFile = async (versionId, userId, file, fileType) => {
+  const version = await prisma.versionProyecto.findUnique({
+    where: { id: versionId },
+    include: { proyecto: true, archivos: true },
+  })
+  if (!version) throw new NotFoundError('Version not found')
+  if (version.proyecto.id_usuario !== userId) throw new ForbiddenError('Not authorized')
+
+  // For portada and juego_webgl: replace existing
+  if (fileType === 'portada' || fileType === 'juego_webgl') {
+    const existing = version.archivos.filter(a => a.tipo === fileType)
+    for (const old of existing) {
+      await deleteFile(old.ruta_storage).catch(() => {})
+      await prisma.archivo.delete({ where: { id: old.id } })
+    }
+  }
+
+  const key = buildStorageKey(version.id_proyecto, versionId, `${Date.now()}_${file.originalname}`)
+  await uploadFile({ buffer: file.buffer, key, mimetype: file.mimetype })
+
+  return prisma.archivo.create({
+    data: {
+      id_version: versionId,
+      tipo: fileType,
+      nombre_archivo: file.originalname,
+      ruta_storage: key,
+      tamanio_bytes: file.size,
+    },
+  })
+}
+
+module.exports = { createVersion, uploadVersionFile: replaceOrAddFile, setActiveVersion, getVersions }

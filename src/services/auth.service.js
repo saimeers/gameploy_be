@@ -2,7 +2,7 @@ const admin = require('../config/firebase');
 const { ValidationError } = require('../utils/errors');
 const { PrismaClient } = require('@prisma/client');
 const { ConflictError } = require('../utils/errors');
-const { sendWelcomeEmail, sendPasswordResetEmail } = require('./email.service');
+const { sendWelcomeEmail, sendPasswordResetEmail, sendPendingApprovalEmail } = require('./email.service');
 
 const prisma = new PrismaClient();
 
@@ -36,6 +36,7 @@ const registerUser = async ({ firebase_uid, nombre, correo, rol_solicitado }) =>
   });
 
   sendWelcomeEmail({ toEmail: correo, nombre }).catch(console.error);
+  sendPendingApprovalEmail({ nombre, correo, rol: rol_solicitado,}).catch(console.error);
 
   return usuario;
 };

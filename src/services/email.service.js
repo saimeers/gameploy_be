@@ -128,4 +128,36 @@ const sendPasswordResetEmail = async ({ toEmail, nombre, resetLink }) => {
   });
 };
 
-module.exports = { sendNewCommentNotification, sendWelcomeEmail, sendPasswordResetEmail };
+/**
+ * Notify admin about pending approval.
+ */
+const sendPendingApprovalEmail = async ({ nombre, correo, rol }) => {
+  const content = `
+    <h2>Nuevo usuario pendiente de aprobación</h2>
+
+    <p>Un nuevo usuario se ha registrado en <strong>${APP_NAME}</strong>.</p>
+
+    <ul>
+      <li><strong>Nombre:</strong> ${nombre}</li>
+      <li><strong>Correo:</strong> ${correo}</li>
+      <li><strong>Rol solicitado:</strong> ${rol}</li>
+    </ul>
+
+    <p>El usuario se encuentra actualmente en estado <strong>pendiente</strong>.</p>
+
+    <center>
+      <a href="${process.env.FRONTEND_URL}/admin/users" class="btn">
+        Revisar solicitudes
+      </a>
+    </center>
+  `;
+
+  await resend.emails.send({
+    from: FROM,
+    to: process.env.ADMIN_EMAIL,
+    subject: `Nuevo usuario pendiente: ${nombre}`,
+    html: baseEmailLayout(content),
+  });
+};
+
+module.exports = { sendNewCommentNotification, sendWelcomeEmail, sendPasswordResetEmail, sendPendingApprovalEmail };

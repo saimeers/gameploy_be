@@ -57,19 +57,33 @@ const getProjectBySlug = async (slug, requestingUser = null) => {
 };
 
 const getMyProjects = async (userId, { page = 1, limit = 12 } = {}) => {
-  const skip = (page - 1) * limit;
+  const skip = (page - 1) * limit
   const [projects, total] = await Promise.all([
     prisma.proyecto.findMany({
       where: { id_usuario: userId },
       skip,
       take: limit,
-      include: { categoria: true, etiquetas: { include: { etiqueta: true } } },
+      include: {
+        categoria: true,
+        etiquetas: { include: { etiqueta: true } },
+        versiones: {
+          where: { es_activa: true },
+          include: {
+            archivos: {
+              where: { tipo: 'portada' },
+              take: 1,
+            },
+          },
+          take: 1,
+        },
+        _count: { select: { visitas: true, comentarios: true } },
+      },
       orderBy: { fecha_creacion: 'desc' },
     }),
     prisma.proyecto.count({ where: { id_usuario: userId } }),
-  ]);
-  return { projects, total, page, limit };
-};
+  ])
+  return { projects, total, page, limit }
+}
 
 const updateProject = async (projectId, userId, data) => {
   const project = await prisma.proyecto.findUnique({ where: { id: projectId } });

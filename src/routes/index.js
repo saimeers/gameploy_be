@@ -15,7 +15,9 @@ const versionRoutes = require('./version.routes');
 const commentRoutes = require('./comment.routes');
 const searchRoutes = require('./search.routes');
 const adminRoutes = require('./admin.routes');
-const controlRoutes = require('./control.routes')
+const controlRoutes = require('./control.routes');
+const { verifyToken } = require('../middlewares/auth.middleware');
+const { requireRoles } = require('../middlewares/rbac.middleware');
 
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
@@ -25,40 +27,80 @@ router.use('/projects/:projectId/comments', commentRoutes);
 router.use('/search', searchRoutes);
 router.use('/admin', adminRoutes);
 router.use('/projects/:projectId/controls', controlRoutes)
+
 router.get('/public/games/:slug', async (req, res, next) => {
-    try {
-        const project = await prisma.proyecto.findUnique({
-            where: { slug: req.params.slug },
-            include: {
-                usuario: { select: { nombre: true } },
-                categoria: true,
-                etiquetas: { include: { etiqueta: true } },
-                controles: { orderBy: { orden: 'asc' } },
-                comentarios: {
-                    where: { activo: true },
-                    include: { usuario: { select: { nombre: true } } },
-                    orderBy: { fecha: 'desc' },
-                    take: 20,
-                },
-                versiones: {
-                    where: { es_activa: true },
-                    include: { archivos: true },
-                    take: 1,
-                },
-            },
+  try {
+    const project = await prisma.proyecto.findUnique({
+      where: { slug: req.params.slug },
+      include: {
+        usuario:    { select: { nombre: true } },
+        categoria:  true,
+        etiquetas:  { include: { etiqueta: true } },
+        controles:  { orderBy: { orden: 'asc' } },
+        comentarios: {
+          where: { activo: true },
+          include: { usuario: { select: { nombre: true } } },
+          orderBy: { fecha: 'desc' },
+          take: 20,
+        },
+        versiones: {
+          where: { es_activa: true },
+          include: { archivos: true },
+          take: 1,
+        },
+        _count: { select: { visitas: true } },
+      },
+    })
+
+    if (!project) {
+      return res.status(404).json({ success: false, message: 'Project not found' })
+    }
+
+    if (project.estado !== 'publicado') {
+      return res.status(403).json({
+        success: false,
+        message: 'Project not published',
+        reason: 'not_published',
+      })
+    }
+
+    if (project.visibilidad === 'privado') {
+      // Check if request has a valid token for the owner
+      const authHeader = req.headers.authorization
+      if (!authHeader?.startsWith('Bearer ')) {
+        return res.status(403).json({
+          success: false,
+          message: 'This project is private',
+          reason: 'private',
         })
-
-        if (!project) return res.status(404).json({ success: false, message: 'Project not found' })
-        if (project.estado !== 'publicado') {
-            return res.status(403).json({ success: false, message: 'Project not published' })
+      }
+      try {
+        const admin = require('../config/firebase')
+        const decoded = await admin.auth().verifyIdToken(authHeader.split(' ')[1])
+        const dbUser = await prisma.usuario.findUnique({ where: { firebase_uid: decoded.uid } })
+        if (!dbUser || dbUser.id !== project.id_usuario) {
+          return res.status(403).json({
+            success: false,
+            message: 'This project is private',
+            reason: 'private',
+          })
         }
-        const origen = req.headers.referer || req.headers.origin || null
-        await prisma.visita.create({
-            data: { id_proyecto: project.id, origen },
-        }).catch(() => { })
+      } catch {
+        return res.status(403).json({
+          success: false,
+          message: 'This project is private',
+          reason: 'private',
+        })
+      }
+    }
 
-        res.json({ success: true, data: project })
-    } catch (err) { next(err) }
+    const origen = req.headers.referer || req.headers.origin || null
+    await prisma.visita.create({
+      data: { id_proyecto: project.id, origen },
+    }).catch(() => {})
+
+    res.json({ success: true, data: project })
+  } catch (err) { next(err) }
 })
 
 router.get('/public/files/url', async (req, res, next) => {
@@ -169,6 +211,39 @@ router.get(/^\/play\/([^/]+)\/([^/]+)\/(.+)$/, async (req, res, next) => {
     } catch (err) {
         next(err)
     }
+})
+
+router.get('/teacher/evaluations', verifyToken, requireRoles('docente', 'admin'), async (req, res, next) => {
+  try {
+    const userId = req.user.dbUser.id
+    // Get distinct projects where this user has commented
+    const comentarios = await prisma.comentario.findMany({
+      where: { id_usuario: userId, activo: true },
+      include: {
+        proyecto: {
+          include: {
+            usuario:  { select: { nombre: true } },
+            categoria: true,
+            versiones: {
+              where:   { es_activa: true },
+              include: { archivos: { where: { tipo: 'portada' }, take: 1 } },
+              take: 1,
+            },
+            _count: { select: { visitas: true, comentarios: true } },
+          },
+        },
+      },
+      orderBy: { fecha: 'desc' },
+    })
+
+    // Deduplicate by project
+    const seen = new Set()
+    const evaluations = comentarios
+      .filter(c => { if (seen.has(c.id_proyecto)) return false; seen.add(c.id_proyecto); return true })
+      .map(c => ({ ...c.proyecto, mi_comentario: c }))
+
+    res.json({ success: true, data: evaluations })
+  } catch (err) { next(err) }
 })
 
 module.exports = router;
