@@ -8,11 +8,13 @@ const { requireRoles } = require('../middlewares/rbac.middleware');
  * /users/me:
  *   get:
  *     summary: Get current user profile
+ *     description: Basic data, role, the projects the user has published and their Firebase photo.
  *     tags: [Users]
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200: { description: User profile }
+ *       404: { description: User not found }
  *   patch:
  *     summary: Update current user profile
  *     tags: [Users]
@@ -23,10 +25,12 @@ const { requireRoles } = require('../middlewares/rbac.middleware');
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [nombre]
  *             properties:
- *               nombre: { type: string }
+ *               nombre: { type: string, maxLength: 80 }
  *     responses:
  *       200: { description: Updated profile }
+ *       422: { description: Empty name or longer than 80 characters }
  */
 router.get('/me', verifyToken, requireRegisteredUser, c.getMe);
 router.patch('/me', verifyToken, requireRegisteredUser, c.updateMe);

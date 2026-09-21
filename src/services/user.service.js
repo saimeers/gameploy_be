@@ -1,9 +1,31 @@
 const { PrismaClient } = require('@prisma/client');
 const admin = require('../config/firebase')
-const { NotFoundError, ForbiddenError } = require('../utils/errors');
+const { NotFoundError, ForbiddenError, ValidationError } = require('../utils/errors');
+
+/** Mismo límite que declara el frontend en `LIMITS.nombreUsuario`. */
+const MAX_NOMBRE = 80;
 
 const prisma = new PrismaClient();
 
+/**
+ * Photo of a user, taken from Firebase Auth. Never fails the caller: a profile
+ * without a picture is perfectly valid.
+ */
+const getPhotoURL = async (firebaseUid) => {
+  if (!firebaseUid) return null;
+  try {
+    const firebaseUser = await admin.auth().getUser(firebaseUid);
+    return firebaseUser.photoURL ?? null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Profile of a user: their basic data and the projects they have published,
+ * with the cover of the active version so the page can show them as cards.
+ * The photo comes from Firebase, which is where the identity lives.
+ */
 const getProfile = async (userId) => {
   const user = await prisma.usuario.findUnique({
     where: { id: userId },
@@ -11,19 +33,44 @@ const getProfile = async (userId) => {
       rol: true,
       proyectos: {
         where: { estado: 'publicado' },
-        select: { id: true, nombre: true, slug: true, fecha_publicacion: true, categoria: true },
+        select: {
+          id: true,
+          nombre: true,
+          descripcion: true,
+          slug: true,
+          visibilidad: true,
+          destacado: true,
+          fecha_publicacion: true,
+          categoria: true,
+          versiones: {
+            where: { es_activa: true },
+            select: { archivos: { where: { tipo: 'portada' }, take: 1 } },
+            take: 1,
+          },
+          _count: { select: { visitas: true, comentarios: true } },
+        },
         orderBy: { fecha_publicacion: 'desc' },
       },
+      _count: { select: { proyectos: true, comentarios: true } },
     },
   });
+
   if (!user) throw new NotFoundError('User not found');
-  return user;
+
+  return { ...user, foto_perfil: await getPhotoURL(user.firebase_uid) };
 };
 
 const updateProfile = async (userId, { nombre }) => {
+  const nombreLimpio = nombre?.trim();
+
+  if (!nombreLimpio) throw new ValidationError('nombre is required');
+  if (nombreLimpio.length > MAX_NOMBRE) {
+    throw new ValidationError(`nombre must be at most ${MAX_NOMBRE} characters`);
+  }
+
   return prisma.usuario.update({
     where: { id: userId },
-    data: { nombre },
+    data: { nombre: nombreLimpio },
     include: { rol: true },
   });
 };
