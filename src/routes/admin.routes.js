@@ -37,6 +37,26 @@ router.get('/projects', c.getAllProjects);
 
 /**
  * @swagger
+ * /admin/projects/{id}:
+ *   get:
+ *     summary: Get a single project with all its relations (admin read-only view)
+ *     description: Ignores visibility and status, so drafts and private projects are readable.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Project with versions, files, controls, tags and comments }
+ *       404: { description: Project not found }
+ */
+router.get('/projects/:id', c.getProject);
+
+/**
+ * @swagger
  * /admin/projects/{id}/featured:
  *   patch:
  *     summary: Toggle featured status of a project

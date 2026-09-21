@@ -1,4 +1,5 @@
 const { PrismaClient } = require('@prisma/client');
+const { NotFoundError, ConflictError, ValidationError } = require('../utils/errors');
 
 const prisma = new PrismaClient();
 
@@ -45,6 +46,36 @@ const getAllProjects = async ({ page = 1, limit = 20 } = {}) => {
   return { projects, total, page, limit };
 };
 
+/**
+ * Full read-only view of a single project for the admin panel.
+ * Unlike getProjectBySlug it ignores visibility, so drafts and private
+ * projects are also readable by an administrator.
+ */
+const getProjectById = async (projectId) => {
+  const project = await prisma.proyecto.findUnique({
+    where: { id: projectId },
+    include: {
+      usuario: { select: { id: true, nombre: true, correo: true } },
+      categoria: true,
+      etiquetas: { include: { etiqueta: true } },
+      controles: { orderBy: { orden: 'asc' } },
+      versiones: {
+        include: { archivos: true },
+        orderBy: { fecha_subida: 'desc' },
+      },
+      comentarios: {
+        include: { usuario: { select: { nombre: true } } },
+        orderBy: { fecha: 'desc' },
+      },
+      _count: { select: { visitas: true, comentarios: true } },
+    },
+  });
+
+  if (!project) throw new NotFoundError('Project not found');
+
+  return project;
+};
+
 const toggleFeatured = async (projectId, destacado) => {
   return prisma.proyecto.update({ where: { id: projectId }, data: { destacado } });
 };
@@ -80,4 +111,11 @@ const approveUser = async (userId) => {
   });
 };
 
-module.exports = { getStats, getAllProjects, toggleFeatured, adminDeleteProject, approveUser };
+module.exports = {
+  getStats,
+  getAllProjects,
+  getProjectById,
+  toggleFeatured,
+  adminDeleteProject,
+  approveUser,
+};

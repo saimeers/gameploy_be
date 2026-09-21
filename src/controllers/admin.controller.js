@@ -16,6 +16,13 @@ const getAllProjects = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+const getProject = async (req, res, next) => {
+  try {
+    const project = await adminService.getProjectById(req.params.id);
+    success(res, { data: project });
+  } catch (err) { next(err); }
+};
+
 const toggleFeatured = async (req, res, next) => {
   try {
     const project = await adminService.toggleFeatured(req.params.id, req.body.destacado);
@@ -37,4 +44,4 @@ const approveUser = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { getStats, getAllProjects, toggleFeatured, deleteProject, approveUser };
+module.exports = { getStats, getAllProjects, getProject, toggleFeatured, deleteProject, approveUser };
