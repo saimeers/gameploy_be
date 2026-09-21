@@ -25,6 +25,11 @@ const upload = multer({
  *       200: { description: Version list }
  *   post:
  *     summary: Create a new version
+ *     description: >
+ *       Carries over the files of the currently active version. Send `heredar`
+ *       with the ids of the files to keep; omit it to keep them all, or send an
+ *       empty array to start the version without files. Inherited files reuse
+ *       the same object in the bucket, so nothing is uploaded twice.
  *     tags: [Versions]
  *     security:
  *       - bearerAuth: []
@@ -43,8 +48,12 @@ const upload = multer({
  *             properties:
  *               numero_version: { type: string, example: "1.0" }
  *               notas_version: { type: string }
+ *               heredar:
+ *                 type: array
+ *                 items: { type: string }
+ *                 description: Ids of the active version's files to keep
  *     responses:
- *       201: { description: Version created }
+ *       201: { description: Version created, with its inherited files }
  */
 router.get('/', verifyToken, requireRegisteredUser,c.list);
 router.post('/', verifyToken, requireRegisteredUser,c.create);

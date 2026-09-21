@@ -1,6 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const { NotFoundError, ConflictError, ValidationError } = require('../utils/errors');
-const { deleteFile } = require('./storage.service');
+const { removeArchivo } = require('./archivo.service');
 
 const prisma = new PrismaClient();
 
@@ -93,10 +93,7 @@ const adminDeleteFile = async (fileId) => {
   const archivo = await prisma.archivo.findUnique({ where: { id: fileId } });
   if (!archivo) throw new NotFoundError('File not found');
 
-  await deleteFile(archivo.ruta_storage).catch(() => {});
-  await prisma.archivo.delete({ where: { id: fileId } });
-
-  return archivo;
+  return removeArchivo(archivo);
 };
 
 const approveUser = async (userId) => {
