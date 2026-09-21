@@ -22,4 +22,11 @@ const moderate = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { add, list, moderate };
+const remove = async (req, res, next) => {
+  try {
+    await commentService.deleteComment(req.params.id);
+    success(res, { message: 'Comment permanently deleted' });
+  } catch (err) { next(err); }
+};
+
+module.exports = { add, list, moderate, remove };

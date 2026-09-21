@@ -52,4 +52,17 @@ const moderateComment = async (commentId, activo) => {
   return prisma.comentario.update({ where: { id: commentId }, data: { activo } });
 };
 
-module.exports = { addComment, getComments, moderateComment };
+/**
+ * Permanently delete a comment. Moderation keeps the record by flipping
+ * `activo`; this removes the row, so it is reserved for the administrator.
+ */
+const deleteComment = async (commentId) => {
+  const comment = await prisma.comentario.findUnique({ where: { id: commentId } });
+  if (!comment) throw new NotFoundError('Comment not found');
+
+  await prisma.comentario.delete({ where: { id: commentId } });
+
+  return comment;
+};
+
+module.exports = { addComment, getComments, moderateComment, deleteComment };
