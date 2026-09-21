@@ -106,20 +106,32 @@ router.patch('/:versionId/activate', verifyToken, requireRegisteredUser, c.setAc
  *     summary: Toggle file active status
  *     tags: [Versions]
  */
-router.delete('/:versionId/files/:fileId', verifyToken, async (req, res, next) => {
-  try {
-    const { PrismaClient } = require('@prisma/client')
-    const prisma = new PrismaClient()
-    const { deleteFile } = require('../services/storage.service')
-
-    const archivo = await prisma.archivo.findUnique({ where: { id: req.params.fileId } })
-    if (!archivo) return res.status(404).json({ success: false, message: 'File not found' })
-
-    await deleteFile(archivo.ruta_storage)
-    await prisma.archivo.delete({ where: { id: req.params.fileId } })
-
-    res.json({ success: true, message: 'File deleted' })
-  } catch (err) { next(err) }
-})
+/**
+ * @swagger
+ * /projects/{projectId}/versions/{versionId}/files/{fileId}:
+ *   delete:
+ *     summary: Delete a file of a version (owner only)
+ *     tags: [Versions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: versionId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: fileId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: File deleted }
+ *       403: { description: Not the owner of the project }
+ *       404: { description: File not found }
+ */
+router.delete('/:versionId/files/:fileId', verifyToken, requireRegisteredUser, c.removeFile)
 
 module.exports = router;

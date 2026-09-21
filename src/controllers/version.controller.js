@@ -36,4 +36,11 @@ const list = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { create, uploadFile, setActive, list };
+const removeFile = async (req, res, next) => {
+  try {
+    await versionService.deleteVersionFile(req.params.fileId, req.user.dbUser.id);
+    success(res, { message: 'File deleted' });
+  } catch (err) { next(err); }
+};
+
+module.exports = { create, uploadFile, setActive, list, removeFile };

@@ -121,4 +121,31 @@ const replaceOrAddFile = async (versionId, userId, file, fileType) => {
   })
 }
 
-module.exports = { createVersion, uploadVersionFile: replaceOrAddFile, setActiveVersion, getVersions }
+/**
+ * Delete one file of a version, both from the bucket and from the database.
+ * Only the owner of the project the file belongs to may delete it.
+ */
+const deleteVersionFile = async (fileId, userId) => {
+  const archivo = await prisma.archivo.findUnique({
+    where: { id: fileId },
+    include: { version: { include: { proyecto: true } } },
+  })
+
+  if (!archivo) throw new NotFoundError('File not found')
+  if (archivo.version.proyecto.id_usuario !== userId) {
+    throw new ForbiddenError('Not authorized')
+  }
+
+  await deleteFile(archivo.ruta_storage).catch(() => {})
+  await prisma.archivo.delete({ where: { id: fileId } })
+
+  return archivo
+}
+
+module.exports = {
+  createVersion,
+  uploadVersionFile: replaceOrAddFile,
+  setActiveVersion,
+  getVersions,
+  deleteVersionFile,
+}
