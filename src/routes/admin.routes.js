@@ -205,6 +205,26 @@ router.delete('/comments/:id', commentController.remove);
  *       200: { description: User approved }
  *       409: { description: User is not pending }
  */
+/**
+ * @swagger
+ * /admin/users/{id}:
+ *   get:
+ *     summary: Get the profile of any user (admin)
+ *     description: Same payload as /users/me, for the administrator to review an account.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Profile with the user's published projects }
+ *       404: { description: User not found }
+ */
+router.get('/users/:id', c.getUser);
+
 router.patch('/users/:id/approve', c.approveUser);
 
 // ── Categorias

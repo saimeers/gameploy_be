@@ -1,4 +1,5 @@
 const adminService = require('../services/admin.service');
+const userService = require('../services/user.service');
 const { success } = require('../utils/response');
 
 const getStats = async (req, res, next) => {
@@ -44,6 +45,13 @@ const deleteFile = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+const getUser = async (req, res, next) => {
+  try {
+    const profile = await userService.getProfile(req.params.id);
+    success(res, { data: profile });
+  } catch (err) { next(err); }
+};
+
 const approveUser = async (req, res, next) => {
   try {
     const user = await adminService.approveUser(req.params.id);
@@ -58,5 +66,6 @@ module.exports = {
   toggleFeatured,
   deleteProject,
   deleteFile,
+  getUser,
   approveUser,
 };
