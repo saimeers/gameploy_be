@@ -37,6 +37,13 @@ const deleteProject = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+const deleteFile = async (req, res, next) => {
+  try {
+    await adminService.adminDeleteFile(req.params.id);
+    success(res, { message: 'File permanently deleted' });
+  } catch (err) { next(err); }
+};
+
 const approveUser = async (req, res, next) => {
   try {
     const user = await adminService.approveUser(req.params.id);
@@ -44,4 +51,12 @@ const approveUser = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { getStats, getAllProjects, getProject, toggleFeatured, deleteProject, approveUser };
+module.exports = {
+  getStats,
+  getAllProjects,
+  getProject,
+  toggleFeatured,
+  deleteProject,
+  deleteFile,
+  approveUser,
+};

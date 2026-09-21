@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const { NotFoundError, ConflictError, ValidationError } = require('../utils/errors');
+const { deleteFile } = require('./storage.service');
 
 const prisma = new PrismaClient();
 
@@ -84,6 +85,20 @@ const adminDeleteProject = async (projectId) => {
   return prisma.proyecto.delete({ where: { id: projectId } });
 };
 
+/**
+ * Permanently delete one file, from the bucket and from the database, whoever
+ * owns the project it belongs to.
+ */
+const adminDeleteFile = async (fileId) => {
+  const archivo = await prisma.archivo.findUnique({ where: { id: fileId } });
+  if (!archivo) throw new NotFoundError('File not found');
+
+  await deleteFile(archivo.ruta_storage).catch(() => {});
+  await prisma.archivo.delete({ where: { id: fileId } });
+
+  return archivo;
+};
+
 const approveUser = async (userId) => {
   const user = await prisma.usuario.findUnique({
     where: { id: userId },
@@ -117,5 +132,6 @@ module.exports = {
   getProjectById,
   toggleFeatured,
   adminDeleteProject,
+  adminDeleteFile,
   approveUser,
 };

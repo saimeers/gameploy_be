@@ -121,6 +121,26 @@ router.delete('/projects/:id', c.deleteProject);
  *     responses:
  *       200: { description: Comment moderated }
  */
+/**
+ * @swagger
+ * /admin/files/{id}:
+ *   delete:
+ *     summary: Permanently delete a project file (admin)
+ *     description: Removes the object from the bucket and its row, whoever owns the project.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: File permanently deleted }
+ *       404: { description: File not found }
+ */
+router.delete('/files/:id', c.deleteFile);
+
 router.patch('/comments/:id/moderate', commentController.moderate);
 
 /**
