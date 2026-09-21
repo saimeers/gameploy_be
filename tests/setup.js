@@ -1,0 +1,15 @@
+// Valores mínimos para que los módulos que leen el entorno al cargarse
+// (Firebase Admin, el cliente S3, Resend) no revienten durante las pruebas.
+process.env.NODE_ENV = 'test'
+process.env.DATABASE_URL = 'postgresql://user:pass@localhost:5432/test'
+process.env.FRONTEND_URL = 'http://localhost:5173'
+process.env.FIREBASE_PROJECT_ID = 'test-project'
+process.env.FIREBASE_CLIENT_EMAIL = 'test@test.iam.gserviceaccount.com'
+process.env.FIREBASE_PRIVATE_KEY = 'test-key'
+process.env.RAILWAY_BUCKET_ENDPOINT = 'http://localhost:9000'
+process.env.RAILWAY_BUCKET_NAME = 'test-bucket'
+process.env.RAILWAY_BUCKET_ACCESS_KEY = 'test'
+process.env.RAILWAY_BUCKET_SECRET_KEY = 'test'
+process.env.RESEND_API_KEY = 'test'
+process.env.RESEND_FROM_EMAIL = 'test@gameploy.test'
+process.env.ADMIN_EMAIL = 'admin@gameploy.test'

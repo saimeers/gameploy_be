@@ -84,6 +84,29 @@ en `.env.example` y en esta tabla.
 | `npm run db:generate` | Regenera el cliente de Prisma |
 | `npm run db:studio` | Abre Prisma Studio |
 | `npm run db:seed` | Puebla roles y categorías iniciales |
+| `npm test` | Ejecuta la batería de pruebas (Jest) |
+| `npm run test:watch` | Pruebas en modo vigilancia |
+| `npm run test:coverage` | Pruebas con informe de cobertura |
+
+## Pruebas
+
+Jest y Supertest, en `tests/`. No tocan ni la base de datos ni el bucket: Prisma,
+Firebase Admin y el cliente de almacenamiento se sustituyen por dobles, así que la batería
+corre sin infraestructura y sin credenciales.
+
+```
+tests/
+├── app.test.js        Health check, 404 y exigencia de token en los endpoints protegidos
+├── middlewares/       Control de acceso por roles
+├── services/          Herencia de archivos entre versiones y borrado con conteo de referencias
+├── utils/             Generación de slugs y formato de las respuestas
+└── setup.js           Variables de entorno mínimas para cargar los módulos
+```
+
+`nanoid` se publica solo como ESM y el proyecto es CommonJS, así que Jest lo resuelve
+al doble de `tests/__mocks__/nanoid.js`.
+
+Toda corrección de un fallo debería llegar con la prueba que lo reproduce.
 
 ## Migraciones
 
@@ -270,8 +293,16 @@ docs(readme): document environment variables
 Un cambio incompatible lleva `!` tras el alcance (`feat(api)!: ...`) o un pie
 `BREAKING CHANGE: <descripción>`.
 
+### Integración continua
+
+`.github/workflows/ci.yml` instala, genera el cliente de Prisma y ejecuta las pruebas en
+cada push y en cada Pull Request hacia `main`. Railway despliega desde `main`; con la opción
+**Wait for CI** activada en los ajustes del servicio, espera a que el workflow termine en
+verde antes de desplegar.
+
 ### Antes de abrir un Pull Request
 
+- `npm test` en verde.
 - La aplicación arranca con `npm run dev` y `/health` responde.
 - Si el cambio toca `prisma/schema.prisma`, incluir la migración correspondiente.
 - Si añade o modifica endpoints, actualizar sus anotaciones Swagger y este README.
