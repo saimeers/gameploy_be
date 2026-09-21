@@ -16,6 +16,13 @@ const getAllProjects = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+const getProject = async (req, res, next) => {
+  try {
+    const project = await adminService.getProjectById(req.params.id);
+    success(res, { data: project });
+  } catch (err) { next(err); }
+};
+
 const toggleFeatured = async (req, res, next) => {
   try {
     const project = await adminService.toggleFeatured(req.params.id, req.body.destacado);
@@ -30,6 +37,13 @@ const deleteProject = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+const deleteFile = async (req, res, next) => {
+  try {
+    await adminService.adminDeleteFile(req.params.id);
+    success(res, { message: 'File permanently deleted' });
+  } catch (err) { next(err); }
+};
+
 const approveUser = async (req, res, next) => {
   try {
     const user = await adminService.approveUser(req.params.id);
@@ -37,4 +51,12 @@ const approveUser = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { getStats, getAllProjects, toggleFeatured, deleteProject, approveUser };
+module.exports = {
+  getStats,
+  getAllProjects,
+  getProject,
+  toggleFeatured,
+  deleteProject,
+  deleteFile,
+  approveUser,
+};

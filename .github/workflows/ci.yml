@@ -1,0 +1,31 @@
+name: CI
+
+# Se ejecuta en cada rama y en los Pull Request hacia main. Railway, con
+# "Wait for CI" activado, espera a que este workflow termine antes de desplegar.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: CI
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Generar el cliente de Prisma
+        run: npx prisma generate
+
+      - name: Ejecutar las pruebas
+        run: npm test

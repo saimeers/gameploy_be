@@ -37,6 +37,26 @@ router.get('/projects', c.getAllProjects);
 
 /**
  * @swagger
+ * /admin/projects/{id}:
+ *   get:
+ *     summary: Get a single project with all its relations (admin read-only view)
+ *     description: Ignores visibility and status, so drafts and private projects are readable.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Project with versions, files, controls, tags and comments }
+ *       404: { description: Project not found }
+ */
+router.get('/projects/:id', c.getProject);
+
+/**
+ * @swagger
  * /admin/projects/{id}/featured:
  *   patch:
  *     summary: Toggle featured status of a project
@@ -101,7 +121,72 @@ router.delete('/projects/:id', c.deleteProject);
  *     responses:
  *       200: { description: Comment moderated }
  */
+/**
+ * @swagger
+ * /admin/files/{id}:
+ *   delete:
+ *     summary: Permanently delete a project file (admin)
+ *     description: Removes the object from the bucket and its row, whoever owns the project.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: File permanently deleted }
+ *       404: { description: File not found }
+ */
+router.delete('/files/:id', c.deleteFile);
+
+/**
+ * @swagger
+ * /admin/comments/{id}/moderate:
+ *   patch:
+ *     summary: Hide or show a comment without deleting it
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               activo: { type: boolean }
+ *     responses:
+ *       200: { description: Comment moderated }
+ *       404: { description: Comment not found }
+ */
 router.patch('/comments/:id/moderate', commentController.moderate);
+
+/**
+ * @swagger
+ * /admin/comments/{id}:
+ *   delete:
+ *     summary: Permanently delete a comment (admin)
+ *     description: Removes the row. Prefer moderation, which keeps it for auditing.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Comment permanently deleted }
+ *       404: { description: Comment not found }
+ */
+router.delete('/comments/:id', commentController.remove);
 
 /**
  * @swagger
