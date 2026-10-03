@@ -10,6 +10,7 @@ const { getPublicFilesConfig } = require('../config/publicFiles')
 const cdnToken = require('../utils/cdnToken')
 const visitService = require('../services/visit.service')
 const projectService = require('../services/project.service')
+const cache = require('../services/cache.service')
 
 const authRoutes = require('./auth.routes');
 const userRoutes = require('./user.routes');
@@ -33,9 +34,12 @@ router.use('/projects/:projectId/controls', controlRoutes)
 
 router.get('/public/games/:slug', async (req, res, next) => {
   try {
-    // Old slugs still resolve: the frontend redirects to the current one
-    const projectId = await projectService.resolveSlug(req.params.slug)
-    const project = projectId && await prisma.proyecto.findUnique({
+    // Cached for a minute (invalidated when a project changes); the
+    // visibility checks below run on every request. Old slugs still resolve:
+    // the frontend redirects to the current one.
+    const project = await cache.remember('games', `slug:${req.params.slug}`, 60, async () => {
+      const projectId = await projectService.resolveSlug(req.params.slug)
+      return projectId && prisma.proyecto.findUnique({
       where: { id: projectId },
       include: {
         usuario:    { select: { nombre: true } },
@@ -55,6 +59,7 @@ router.get('/public/games/:slug', async (req, res, next) => {
         },
         _count: { select: { visitas: true } },
       },
+      })
     })
 
     if (!project) {
@@ -70,7 +75,7 @@ router.get('/public/games/:slug', async (req, res, next) => {
     }
 
     if (project.visibilidad === 'privado') {
-      // Check if request has a valid token for the owner
+      // Only its owner (or an admin) may open a private project
       const authHeader = req.headers.authorization
       if (!authHeader?.startsWith('Bearer ')) {
         return res.status(403).json({
@@ -82,8 +87,11 @@ router.get('/public/games/:slug', async (req, res, next) => {
       try {
         const admin = require('../config/firebase')
         const decoded = await admin.auth().verifyIdToken(authHeader.split(' ')[1])
-        const dbUser = await prisma.usuario.findUnique({ where: { firebase_uid: decoded.uid } })
-        if (!dbUser || dbUser.id !== project.id_usuario) {
+        const dbUser = await prisma.usuario.findUnique({
+          where: { firebase_uid: decoded.uid },
+          include: { rol: true },
+        })
+        if (!dbUser || (dbUser.id !== project.id_usuario && dbUser.rol?.nombre !== 'admin')) {
           return res.status(403).json({
             success: false,
             message: 'This project is private',

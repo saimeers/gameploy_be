@@ -12,10 +12,19 @@ jest.mock('geoip-lite', () => ({
 }))
 
 const geoip = require('geoip-lite')
+const cache = require('../../src/services/cache.service')
+const { setRedisForTests } = require('../../src/config/redis')
+const { createFakeRedis } = require('../helpers/fakeRedis')
 const visits = require('../../src/services/visit.service')
 
 const STUDENT = { dbUser: { id: 'u1', rol: { nombre: 'estudiante' } } }
 const ADMIN = { dbUser: { id: 'a1', rol: { nombre: 'admin' } } }
+
+afterEach(() => {
+  jest.useRealTimers()
+  setRedisForTests(null)
+  cache._resetForTests()
+})
 
 beforeEach(() => {
   mockPrisma.visita.create.mockResolvedValue({})
@@ -50,6 +59,35 @@ describe('recordVisit', () => {
       id_proyecto: 'p1', origen: 'https://x.test', codigo_pais: 'CO', region: 'ANT', ciudad: 'Medellín',
     })
     expect(JSON.stringify(data)).not.toContain('181.49')
+  })
+
+  it('cuenta una sola visita por visitante cada 30 minutos', async () => {
+    jest.useFakeTimers({ now: Date.now() })
+
+    await visits.recordVisit('p1', { ip: '181.49.10.10' })
+    await visits.recordVisit('p1', { ip: '181.49.10.10' })
+    await visits.recordVisit('p2', { ip: '181.49.10.10' })
+    await visits.recordVisit('p1', { ip: '8.8.8.8' })
+    expect(mockPrisma.visita.create).toHaveBeenCalledTimes(3)
+
+    jest.advanceTimersByTime(31 * 60 * 1000)
+    await visits.recordVisit('p1', { ip: '181.49.10.10' })
+    expect(mockPrisma.visita.create).toHaveBeenCalledTimes(4)
+  })
+
+  it('en Redis guarda un hash del visitante que vence en 30 minutos, no la IP', async () => {
+    const redis = createFakeRedis()
+    setRedisForTests(redis)
+
+    await visits.recordVisit('p1', { ip: '181.49.10.10' })
+    await visits.recordVisit('p1', { ip: '181.49.10.10' })
+
+    const [key] = [...redis.data.keys()]
+    expect(key).toMatch(/^visit:p1:[A-Za-z0-9_-]{22}$/)
+    expect(key).not.toContain('181')
+    expect(await redis.pttl(key)).toBeGreaterThan(29 * 60 * 1000)
+    expect(await redis.pttl(key)).toBeLessThanOrEqual(30 * 60 * 1000)
+    expect(mockPrisma.visita.create).toHaveBeenCalledTimes(1)
   })
 
   it('no lanza si la base de datos falla', async () => {
@@ -88,6 +126,13 @@ describe('getVisitStats', () => {
       countries: [{ codigo_pais: 'CO', visitas: 2 }, { codigo_pais: null, visitas: 1 }],
       cities: [{ codigo_pais: 'CO', region: 'NSA', ciudad: 'Cúcuta', visitas: 2 }],
     })
+  })
+
+  it('guarda las estadísticas en caché unos minutos', async () => {
+    await visits.getVisitStats({ projectId: 'p9' })
+    await visits.getVisitStats({ projectId: 'p9' })
+
+    expect(mockPrisma.visita.count).toHaveBeenCalledTimes(1)
   })
 
   it('filtra por dueño y por periodo', async () => {

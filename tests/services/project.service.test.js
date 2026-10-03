@@ -16,6 +16,7 @@ jest.mock('../../src/services/storage.service', () => ({
 const { deleteFile } = require('../../src/services/storage.service')
 
 const projects = require('../../src/services/project.service')
+const cache = require('../../src/services/cache.service')
 
 const OWNER = { dbUser: { id: 'u1', rol: { nombre: 'estudiante' } } }
 const OTHER = { dbUser: { id: 'u2', rol: { nombre: 'estudiante' } } }
@@ -109,6 +110,16 @@ describe('updateProject', () => {
     })
 
     expect(mockPrisma.proyecto.update.mock.calls[0][0].data).toEqual({ nombre: 'Nuevo' })
+  })
+
+  it('invalida la ficha pública en caché (p. ej. al pasar a privado)', async () => {
+    const load = jest.fn().mockResolvedValue({ visibilidad: 'publico' })
+    await cache.remember('games', 'slug:memoria-x7k2ab', 60, load)
+
+    await projects.updateProject('p1', 'u1', { visibilidad: 'privado' })
+    await cache.remember('games', 'slug:memoria-x7k2ab', 60, load)
+
+    expect(load).toHaveBeenCalledTimes(2)
   })
 })
 

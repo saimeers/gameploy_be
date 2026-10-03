@@ -3,6 +3,7 @@ const { NotFoundError, ForbiddenError } = require('../utils/errors');
 const { uploadFile, deleteFile, getPresignedUrl, buildStorageKey } = require('./storage.service');
 const { isPublishingEnabled, publishArchivo } = require('./publish.service');
 const { removeArchivo } = require('./archivo.service');
+const { invalidatePublicData } = require('./cache.service');
 
 const prisma = new PrismaClient();
 
@@ -38,7 +39,7 @@ const createVersion = async (projectId, userId, { numero_version, notas_version,
     data: { es_activa: false },
   });
 
-  return prisma.versionProyecto.create({
+  const version = await prisma.versionProyecto.create({
     data: {
       id_proyecto: projectId,
       numero_version,
@@ -57,6 +58,8 @@ const createVersion = async (projectId, userId, { numero_version, notas_version,
     },
     include: { archivos: true },
   });
+  await invalidatePublicData();
+  return version;
 };
 
 const uploadVersionFile = async (versionId, userId, file, fileType) => {
@@ -90,7 +93,7 @@ const uploadVersionFile = async (versionId, userId, file, fileType) => {
     mimetype: file.mimetype,
   });
 
-  return prisma.archivo.create({
+  const archivo = await prisma.archivo.create({
     data: {
       id_version: versionId,
       tipo: fileType,
@@ -99,6 +102,8 @@ const uploadVersionFile = async (versionId, userId, file, fileType) => {
       tamanio_bytes: file.size,
     },
   });
+  await invalidatePublicData();
+  return archivo;
 };
 
 const setActiveVersion = async (versionId, userId) => {
@@ -114,11 +119,13 @@ const setActiveVersion = async (versionId, userId) => {
     data: { es_activa: false },
   });
 
-  return prisma.versionProyecto.update({
+  const active = await prisma.versionProyecto.update({
     where: { id: versionId },
     data: { es_activa: true },
     include: { archivos: true },
   });
+  await invalidatePublicData();
+  return active;
 };
 
 /** Owner or admin; anyone else gets 403, since versions carry the game files. */
@@ -171,7 +178,7 @@ const replaceOrAddFile = async (versionId, userId, file, fileType) => {
     }
   }
 
-  return prisma.archivo.create({
+  const archivo = await prisma.archivo.create({
     data: {
       id_version: versionId,
       tipo: fileType,
@@ -181,6 +188,8 @@ const replaceOrAddFile = async (versionId, userId, file, fileType) => {
       ...published,
     },
   })
+  await invalidatePublicData()
+  return archivo
 }
 
 /**
@@ -213,7 +222,8 @@ const deleteVersionFile = async (fileId, userId) => {
     throw new ForbiddenError('Not authorized')
   }
 
-  return removeArchivo(archivo)
+  await removeArchivo(archivo)
+  await invalidatePublicData()
 }
 
 module.exports = {

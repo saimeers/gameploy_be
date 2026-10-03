@@ -3,6 +3,7 @@ const { NotFoundError, ForbiddenError, ValidationError, ConflictError } = requir
 const { generateSlug, slugify, isValidSlug, SLUG_MIN, SLUG_MAX } = require('../utils/slug');
 const { assertActiveAssignments } = require('./catalog.service');
 const { removeOrphanedObjects } = require('./archivo.service');
+const { invalidatePublicData } = require('./cache.service');
 
 const prisma = new PrismaClient();
 
@@ -130,7 +131,7 @@ const updateProject = async (projectId, userId, data) => {
     EDITABLE_FIELDS.filter(field => data[field] !== undefined).map(field => [field, data[field]]),
   );
 
-  return prisma.proyecto.update({
+  const updated = await prisma.proyecto.update({
     where: { id: projectId },
     data: {
       ...rest,
@@ -143,6 +144,8 @@ const updateProject = async (projectId, userId, data) => {
     },
     include: { categoria: true, etiquetas: { include: { etiqueta: true } } },
   });
+  await invalidatePublicData();
+  return updated;
 };
 
 const publishProject = async (projectId, userId) => {
@@ -150,10 +153,12 @@ const publishProject = async (projectId, userId) => {
   if (!project) throw new NotFoundError('Project not found');
   if (project.id_usuario !== userId) throw new ForbiddenError('You do not own this project');
 
-  return prisma.proyecto.update({
+  const updated = await prisma.proyecto.update({
     where: { id: projectId },
     data: { estado: 'publicado', fecha_publicacion: new Date() },
   });
+  await invalidatePublicData();
+  return updated;
 };
 
 const assertCanEdit = (project, requestingUser) => {
@@ -210,6 +215,7 @@ const changeSlug = async (projectId, input, requestingUser) => {
       prisma.slugAnterior.create({ data: { slug: project.slug, id_proyecto: projectId } }),
       prisma.proyecto.update({ where: { id: projectId }, data: { slug: check.slug } }),
     ]);
+    await invalidatePublicData();
     return updated;
   } catch (err) {
     // Another project took the slug between the check and the update.
@@ -229,6 +235,7 @@ const deleteProjectAndFiles = async (projectId) => {
     select: { ruta_storage: true, ruta_publica: true },
   });
   await prisma.proyecto.delete({ where: { id: projectId } });
+  await invalidatePublicData();
   await removeOrphanedObjects(archivos);
 };
 

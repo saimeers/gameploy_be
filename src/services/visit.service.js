@@ -1,5 +1,7 @@
+const crypto = require('crypto');
 const { PrismaClient } = require('@prisma/client');
 const { NotFoundError, ForbiddenError } = require('../utils/errors');
+const { setIfAbsent, remember } = require('./cache.service');
 
 const prisma = new PrismaClient();
 
@@ -35,16 +37,37 @@ const locate = (ip) => {
   }
 };
 
+const UNIQUE_VISIT_SECONDS = 30 * 60;
+
 /**
- * Record a visit to a project. It never throws, and callers do not need to
- * await it: a failed record must not break the page being visited.
+ * Whether this is the visitor's first visit to the project in the last 30
+ * minutes, so reloading the page does not count again. The visitor is a keyed
+ * hash of the IP that only lives in the cache for that time and never reaches
+ * the database.
+ */
+const isNewVisit = (projectId, ip) => {
+  if (!ip) return Promise.resolve(true);
+  const visitor = crypto
+    .createHmac('sha256', process.env.VISIT_SALT || 'gameploy-visits')
+    .update(ip)
+    .digest('base64url')
+    .slice(0, 22);
+  return setIfAbsent(`visit:${projectId}:${visitor}`, UNIQUE_VISIT_SECONDS);
+};
+
+/**
+ * Record a visit to a project, once per visitor every 30 minutes. It never
+ * throws, and callers do not need to await it: a failed record must not
+ * break the page being visited.
  * @param {string} projectId
  * @param {{ ip?: string, origen?: string | null }} visitor
  */
-const recordVisit = (projectId, { ip, origen = null } = {}) =>
-  prisma.visita
-    .create({ data: { id_proyecto: projectId, origen, ...locate(ip) } })
-    .catch(() => {});
+const recordVisit = async (projectId, { ip, origen = null } = {}) => {
+  try {
+    if (!(await isNewVisit(projectId, ip))) return;
+    await prisma.visita.create({ data: { id_proyecto: projectId, origen, ...locate(ip) } });
+  } catch { /* a lost visit is better than a broken page */ }
+};
 
 /** `days` from a query string, or undefined for all time. */
 const parseDays = (value) => {
@@ -59,7 +82,11 @@ const parseDays = (value) => {
  * @param {string} [scope.ownerId] only the projects of this user
  * @param {number} [scope.days] only the last N days
  */
-const getVisitStats = async ({ projectId, ownerId, days } = {}) => {
+const getVisitStats = ({ projectId, ownerId, days } = {}) =>
+  remember('visits', `${projectId ?? ''}:${ownerId ?? ''}:${days ?? 'all'}`, 300, () =>
+    computeVisitStats({ projectId, ownerId, days }));
+
+const computeVisitStats = async ({ projectId, ownerId, days } = {}) => {
   const where = {};
   if (projectId) where.id_proyecto = projectId;
   if (ownerId) where.proyecto = { id_usuario: ownerId };

@@ -6,6 +6,7 @@ const mockPrisma = {
 jest.mock('@prisma/client', () => ({ PrismaClient: jest.fn(() => mockPrisma) }))
 
 const catalog = require('../../src/services/catalog.service')
+const cache = require('../../src/services/cache.service')
 
 describe('catálogo de categorías y etiquetas', () => {
   it('ofrece solo las activas en los formularios', async () => {
@@ -29,6 +30,19 @@ describe('catálogo de categorías y etiquetas', () => {
       where: { id: 1 }, data: { activo: false },
     }))
     expect(mockPrisma.categoria.delete).not.toHaveBeenCalled()
+  })
+
+  it('al desactivar, los filtros y la búsqueda dejan de mostrarla', async () => {
+    mockPrisma.categoria.update.mockResolvedValue({ id: 1, activo: false })
+    const load = jest.fn().mockResolvedValue([])
+    await cache.remember('catalog', 'categorias', 300, load)
+    await cache.remember('search', 'q', 60, load)
+
+    await catalog.setStatus('categoria', '1', false)
+    await cache.remember('catalog', 'categorias', 300, load)
+    await cache.remember('search', 'q', 60, load)
+
+    expect(load).toHaveBeenCalledTimes(4)
   })
 
   it('exige un booleano para cambiar el estado', () => {

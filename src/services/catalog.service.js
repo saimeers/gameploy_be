@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const { NotFoundError, ConflictError, ValidationError } = require('../utils/errors');
+const { bump } = require('./cache.service');
 
 const prisma = new PrismaClient();
 
@@ -33,6 +34,12 @@ const translate = (cfg) => (err) => {
 };
 
 /** Every item, active or not, with how many projects use it. */
+/** Category and tag names show in the filters, search results and game pages. */
+const changed = async (result) => {
+  await bump('catalog', 'search', 'games');
+  return result;
+};
+
 const list = (kind) => {
   const cfg = kindOf(kind);
   return prisma[cfg.model].findMany({ orderBy: { nombre: 'asc' }, include: withUsage });
@@ -48,14 +55,15 @@ const create = (kind, data) => {
   const cfg = kindOf(kind);
   const values = pick(data, cfg.fields);
   if (!values.nombre?.trim()) throw new ValidationError('nombre is required');
-  return prisma[cfg.model].create({ data: values, include: withUsage }).catch(translate(cfg));
+  return prisma[cfg.model].create({ data: values, include: withUsage }).catch(translate(cfg)).then(changed);
 };
 
 const update = (kind, id, data) => {
   const cfg = kindOf(kind);
   return prisma[cfg.model]
     .update({ where: { id: Number(id) }, data: pick(data, cfg.fields), include: withUsage })
-    .catch(translate(cfg));
+    .catch(translate(cfg))
+    .then(changed);
 };
 
 const setStatus = (kind, id, activo) => {
@@ -63,7 +71,8 @@ const setStatus = (kind, id, activo) => {
   if (typeof activo !== 'boolean') throw new ValidationError('activo must be a boolean');
   return prisma[cfg.model]
     .update({ where: { id: Number(id) }, data: { activo }, include: withUsage })
-    .catch(translate(cfg));
+    .catch(translate(cfg))
+    .then(changed);
 };
 
 const remove = async (kind, id) => {
@@ -76,7 +85,7 @@ const remove = async (kind, id) => {
     throw new ConflictError(`${cfg.label} is used by ${usage} project(s); deactivate it instead`);
   }
   await prisma[cfg.model].delete({ where: { id: item.id } });
-  return item;
+  return changed(item);
 };
 
 /**

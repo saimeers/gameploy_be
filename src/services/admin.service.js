@@ -4,6 +4,7 @@ const { removeArchivo } = require('./archivo.service');
 const { deleteProjectAndFiles } = require('./project.service');
 const { loadBuild, describeBuild } = require('./play.service');
 const { getPresignedUrl } = require('./storage.service');
+const { invalidatePublicData } = require('./cache.service');
 
 const prisma = new PrismaClient();
 
@@ -81,7 +82,9 @@ const getProjectById = async (projectId) => {
 };
 
 const toggleFeatured = async (projectId, destacado) => {
-  return prisma.proyecto.update({ where: { id: projectId }, data: { destacado } });
+  const project = await prisma.proyecto.update({ where: { id: projectId }, data: { destacado } });
+  await invalidatePublicData();
+  return project;
 };
 
 const adminDeleteProject = async (projectId) => {
@@ -119,7 +122,8 @@ const adminDeleteFile = async (fileId) => {
   const archivo = await prisma.archivo.findUnique({ where: { id: fileId } });
   if (!archivo) throw new NotFoundError('File not found');
 
-  return removeArchivo(archivo);
+  await removeArchivo(archivo);
+  await invalidatePublicData();
 };
 
 const approveUser = async (userId) => {
