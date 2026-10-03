@@ -64,11 +64,15 @@ const getProjectBySlug = async (slug, requestingUser = null) => {
 
   if (!project) throw new NotFoundError('Project not found');
 
-  // Visibility check
-  if (project.visibilidad === 'privado') {
-    if (!requestingUser || requestingUser.dbUser.id !== project.id_usuario) {
-      throw new ForbiddenError('This project is private');
-    }
+  // Drafts and private projects: only their owner or an admin
+  const isOwnerOrAdmin = !!requestingUser?.dbUser && (
+    requestingUser.dbUser.id === project.id_usuario || requestingUser.dbUser.rol?.nombre === 'admin'
+  );
+  if (project.visibilidad === 'privado' && !isOwnerOrAdmin) {
+    throw new ForbiddenError('This project is private');
+  }
+  if (project.estado !== 'publicado' && !isOwnerOrAdmin) {
+    throw new ForbiddenError('This project is not published');
   }
 
   return project;
@@ -222,10 +226,10 @@ const changeSlug = async (projectId, input, requestingUser) => {
 const deleteProjectAndFiles = async (projectId) => {
   const archivos = await prisma.archivo.findMany({
     where: { version: { id_proyecto: projectId } },
-    select: { ruta_storage: true },
+    select: { ruta_storage: true, ruta_publica: true },
   });
   await prisma.proyecto.delete({ where: { id: projectId } });
-  await removeOrphanedObjects(archivos.map(a => a.ruta_storage));
+  await removeOrphanedObjects(archivos);
 };
 
 const deleteProject = async (projectId, requestingUser) => {

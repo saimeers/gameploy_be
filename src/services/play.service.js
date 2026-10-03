@@ -75,6 +75,25 @@ const extractBuild = (zipBuffer) => {
   return { files, root: findRoot([...files.keys()]), bytes };
 };
 
+/**
+ * Files of a build relative to its root, with the same checks the upload form
+ * runs: a Gzip/Brotli build cannot be served, and the PWA template is expected.
+ */
+const describeBuild = (build) => {
+  const files = [...build.files]
+    .filter(([name]) => name.startsWith(build.root))
+    .map(([name, data]) => ({ path: name.slice(build.root.length), size: data.length }))
+    .sort((a, b) => a.path.localeCompare(b.path));
+
+  return {
+    root: build.root,
+    totalBytes: files.reduce((sum, f) => sum + f.size, 0),
+    files,
+    compressed: files.some(f => /^Build\/.*\.(gz|br|unityweb)$/i.test(f.path)),
+    pwa: files.some(f => f.path === 'manifest.webmanifest' || f.path === 'ServiceWorker.js'),
+  };
+};
+
 const remember = (key, build) => {
   cache.set(key, build);
   cachedBytes += build.bytes;
@@ -193,6 +212,8 @@ const _resetForTests = () => {
 
 module.exports = {
   SERVE_REVISION,
+  extractBuild,
+  describeBuild,
   loadBuild,
   forgetBuild,
   findFile,

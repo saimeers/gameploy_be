@@ -143,4 +143,32 @@ router.patch('/:versionId/activate', verifyToken, requireRegisteredUser, c.setAc
  */
 router.delete('/:versionId/files/:fileId', verifyToken, requireRegisteredUser, c.removeFile)
 
+/**
+ * @swagger
+ * /projects/{projectId}/versions/{versionId}/files/{fileId}/download:
+ *   get:
+ *     summary: Link to download the original upload of a file
+ *     description: Owner only. The link is valid for 5 minutes.
+ *     tags: [Versions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: versionId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: fileId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: "{ url }" }
+ *       403: { description: Not the owner }
+ */
+router.get('/:versionId/files/:fileId/download', verifyToken, requireRegisteredUser, c.download)
+
 module.exports = router;

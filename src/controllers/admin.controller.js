@@ -2,6 +2,7 @@ const adminService = require('../services/admin.service');
 const visitService = require('../services/visit.service');
 const userService = require('../services/user.service');
 const { success } = require('../utils/response');
+const { withFileUrls } = require('../services/fileUrls');
 
 const getStats = async (req, res, next) => {
   try {
@@ -35,7 +36,7 @@ const getAllProjects = async (req, res, next) => {
 const getProject = async (req, res, next) => {
   try {
     const project = await adminService.getProjectById(req.params.id);
-    success(res, { data: project });
+    success(res, { data: await withFileUrls(project) });
   } catch (err) { next(err); }
 };
 
@@ -63,7 +64,13 @@ const deleteFile = async (req, res, next) => {
 const getUser = async (req, res, next) => {
   try {
     const profile = await userService.getProfile(req.params.id);
-    success(res, { data: profile });
+    success(res, { data: await withFileUrls(profile) });
+  } catch (err) { next(err); }
+};
+
+const downloadFile = async (req, res, next) => {
+  try {
+    success(res, { data: await adminService.getDownloadUrl(req.params.id) });
   } catch (err) { next(err); }
 };
 
@@ -78,6 +85,7 @@ module.exports = {
   getStats,
   getVisitStats,
   getBuildContents,
+  downloadFile,
   getAllProjects,
   getProject,
   toggleFeatured,

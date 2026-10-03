@@ -10,9 +10,10 @@
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
     "db:seed": "node prisma/seed.js",
-    "test": "jest",
+    "test": "jest && npm --prefix cdn-worker test",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "publish:existing": "node scripts/publish-existing.js"
   },
   "prisma": {
     "seed": "node prisma/seed.js"

@@ -46,10 +46,17 @@ const getObjectBuffer = async (key) => {
  * Generate a pre-signed URL to access a private file.
  * @param {string} key
  * @param {number} expiresIn - seconds (default 1 hour)
+ * @param {string|null} downloadName - when set, the browser downloads the file with this name
  * @returns {Promise<string>}
  */
-const getPresignedUrl = async (key, expiresIn = 3600) => {
-  const command = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: key });
+const getPresignedUrl = async (key, expiresIn = 3600, downloadName = null) => {
+  const command = new GetObjectCommand({
+    Bucket: BUCKET_NAME,
+    Key: key,
+    ...(downloadName && {
+      ResponseContentDisposition: `attachment; filename="${downloadName.replace(/["\\\r\n]/g, '')}"`,
+    }),
+  });
   return getSignedUrl(storageClient, command, { expiresIn });
 };
 

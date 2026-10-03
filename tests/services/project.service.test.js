@@ -150,3 +150,34 @@ describe('deleteProjectAndFiles', () => {
     expect(deleteFile.mock.calls).toEqual([['k/game.zip']])
   })
 })
+
+describe('getProjectBySlug y los borradores', () => {
+  const full = (overrides) => ({ ...PROJECT, estado: 'publicado', visibilidad: 'publico', ...overrides })
+
+  beforeEach(() => {
+    mockPrisma.proyecto.findUnique.mockImplementation(({ where }) =>
+      Promise.resolve(where.slug ? { id: 'p1' } : global.__project))
+  })
+
+  it('un borrador solo lo ve su dueño o un admin', async () => {
+    global.__project = full({ estado: 'borrador' })
+    const ADMIN = { dbUser: { id: 'a1', rol: { nombre: 'admin' } } }
+
+    await expect(projects.getProjectBySlug('memoria', null)).rejects.toMatchObject({ statusCode: 403 })
+    await expect(projects.getProjectBySlug('memoria', OTHER)).rejects.toMatchObject({ statusCode: 403 })
+    await expect(projects.getProjectBySlug('memoria', OWNER)).resolves.toMatchObject({ id: 'p1' })
+    await expect(projects.getProjectBySlug('memoria', ADMIN)).resolves.toMatchObject({ id: 'p1' })
+  })
+
+  it('un proyecto privado tampoco lo ve otro estudiante', async () => {
+    global.__project = full({ visibilidad: 'privado' })
+
+    await expect(projects.getProjectBySlug('memoria', OTHER)).rejects.toMatchObject({ statusCode: 403 })
+  })
+
+  it('uno publicado y público lo ve cualquiera', async () => {
+    global.__project = full()
+
+    await expect(projects.getProjectBySlug('memoria', null)).resolves.toMatchObject({ id: 'p1' })
+  })
+})

@@ -1,17 +1,27 @@
 const mockPrisma = {
   proyecto:        { findUnique: jest.fn() },
-  versionProyecto: { findFirst: jest.fn(), updateMany: jest.fn(), create: jest.fn() },
-  archivo:         { delete: jest.fn(), count: jest.fn() },
+  versionProyecto: { findFirst: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), updateMany: jest.fn(), create: jest.fn() },
+  archivo:         { delete: jest.fn(), count: jest.fn(), create: jest.fn(), findUnique: jest.fn() },
 }
 
 jest.mock('@prisma/client', () => ({ PrismaClient: jest.fn(() => mockPrisma) }))
 jest.mock('../../src/services/storage.service', () => ({
   uploadFile: jest.fn(),
-  deleteFile: jest.fn(),
+  deleteFile: jest.fn(() => Promise.resolve()),
+  getPresignedUrl: jest.fn(async () => 'https://bucket.test/descarga'),
   buildStorageKey: jest.fn(() => 'key'),
 }))
+jest.mock('../../src/services/publish.service', () => ({
+  isPublishingEnabled: jest.fn(() => true),
+  publishArchivo: jest.fn(async () => ({ ruta_publica: 'builds/nuevo/', manifiesto: { files: [] } })),
+  removePublished: jest.fn(),
+}))
 
-const { createVersion } = require('../../src/services/version.service')
+const { deleteFile, getPresignedUrl } = require('../../src/services/storage.service')
+const { publishArchivo } = require('../../src/services/publish.service')
+const {
+  createVersion, uploadVersionFile, getVersions, getDownloadUrl,
+} = require('../../src/services/version.service')
 
 const OWNER = 'user-1'
 const PROJECT = { id: 'proj-1', id_usuario: OWNER }
@@ -94,5 +104,70 @@ describe('createVersion', () => {
     await createVersion('proj-1', OWNER, { numero_version: '1.0' })
 
     expect(createdFiles()).toEqual([])
+  })
+})
+
+describe('herencia de la copia publicada', () => {
+  it('la versión nueva reutiliza la copia publicada y el manifiesto de los archivos que hereda', async () => {
+    mockPrisma.versionProyecto.findFirst.mockResolvedValue({
+      id: 'v1',
+      archivos: [{ ...ARCHIVOS[0], ruta_publica: 'builds/b1/', manifiesto: { files: [] } }],
+    })
+
+    await createVersion('proj-1', OWNER, { numero_version: '1.1' })
+
+    expect(createdFiles()[0]).toMatchObject({ ruta_publica: 'builds/b1/', manifiesto: { files: [] } })
+  })
+})
+
+describe('uploadVersionFile', () => {
+  const FILE = { originalname: 'Juego.zip', buffer: Buffer.from('zip'), mimetype: 'application/zip', size: 3 }
+
+  beforeEach(() => {
+    mockPrisma.versionProyecto.findUnique.mockResolvedValue({
+      id: 'v1', id_proyecto: 'proj-1', proyecto: PROJECT, archivos: [],
+    })
+    mockPrisma.archivo.create.mockImplementation(async ({ data }) => ({ id: 'nuevo', ...data }))
+  })
+
+  it('publica la copia para los jugadores y la guarda en el archivo', async () => {
+    const archivo = await uploadVersionFile('v1', OWNER, FILE, 'juego_webgl')
+
+    expect(publishArchivo).toHaveBeenCalledWith({ tipo: 'juego_webgl', nombre_archivo: 'Juego.zip' }, FILE.buffer, 'application/zip')
+    expect(archivo).toMatchObject({ ruta_storage: 'key', ruta_publica: 'builds/nuevo/' })
+  })
+
+  it('si publicar falla, borra el original subido y no crea el archivo', async () => {
+    publishArchivo.mockRejectedValueOnce(new Error('R2 caído'))
+
+    await expect(uploadVersionFile('v1', OWNER, FILE, 'juego_webgl')).rejects.toThrow('R2 caído')
+    expect(deleteFile).toHaveBeenCalledWith('key')
+    expect(mockPrisma.archivo.create).not.toHaveBeenCalled()
+  })
+})
+
+describe('getVersions', () => {
+  const STUDENT = { dbUser: { id: OWNER, rol: { nombre: 'estudiante' } } }
+  const STRANGER = { dbUser: { id: 'otro', rol: { nombre: 'estudiante' } } }
+  const ADMIN = { dbUser: { id: 'admin', rol: { nombre: 'admin' } } }
+
+  it('solo las ve el dueño o un admin, porque llevan los archivos del juego', async () => {
+    mockPrisma.versionProyecto.findMany.mockResolvedValue([])
+
+    await expect(getVersions('proj-1', STUDENT)).resolves.toEqual([])
+    await expect(getVersions('proj-1', ADMIN)).resolves.toEqual([])
+    await expect(getVersions('proj-1', STRANGER)).rejects.toMatchObject({ statusCode: 403 })
+  })
+})
+
+describe('getDownloadUrl', () => {
+  it('da al dueño un enlace corto que descarga con el nombre original', async () => {
+    mockPrisma.archivo.findUnique.mockResolvedValue({
+      ruta_storage: 'k/game.zip', nombre_archivo: 'Juego.zip', version: { proyecto: PROJECT },
+    })
+
+    await expect(getDownloadUrl('a1', OWNER)).resolves.toEqual({ url: 'https://bucket.test/descarga' })
+    expect(getPresignedUrl).toHaveBeenCalledWith('k/game.zip', 300, 'Juego.zip')
+    await expect(getDownloadUrl('a1', 'otro')).rejects.toMatchObject({ statusCode: 403 })
   })
 })

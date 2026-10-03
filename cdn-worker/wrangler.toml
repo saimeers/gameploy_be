@@ -1,0 +1,17 @@
+# Worker que sirve los juegos y las imágenes de Gameploy desde R2.
+# Despliegue: npx wrangler login && npx wrangler secret put CDN_SIGNING_SECRET && npx wrangler deploy
+name = "gameploy-cdn"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# Dominio propio: Cloudflare crea el registro DNS al desplegar (la zona debe estar en la cuenta).
+routes = [
+  { pattern = "cdn-gameploy.saimers.dev", custom_domain = true }
+]
+
+# Bucket privado donde la API publica los builds y las imágenes.
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "gameploy-files"
+
+# CDN_SIGNING_SECRET se guarda como secreto (wrangler secret put), nunca aquí.

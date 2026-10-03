@@ -184,6 +184,26 @@ router.get('/files/:id/contents', c.getBuildContents);
 
 /**
  * @swagger
+ * /admin/files/{id}/download:
+ *   get:
+ *     summary: Link to download the original upload of a file
+ *     description: The link is valid for 5 minutes.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: "{ url }" }
+ *       404: { description: File not found }
+ */
+router.get('/files/:id/download', c.downloadFile);
+
+/**
+ * @swagger
  * /admin/comments/{id}/moderate:
  *   patch:
  *     summary: Hide or show a comment without deleting it

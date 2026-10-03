@@ -2,8 +2,12 @@ const router = require('express').Router();
 const { PrismaClient } = require('@prisma/client')
 const prisma = new PrismaClient()
 
-const { getPresignedUrl } = require('../services/storage.service')
+const fs = require('fs')
+const path = require('path')
 const play = require('../services/play.service')
+const { withFileUrls } = require('../services/fileUrls')
+const { getPublicFilesConfig } = require('../config/publicFiles')
+const cdnToken = require('../utils/cdnToken')
 const visitService = require('../services/visit.service')
 const projectService = require('../services/project.service')
 
@@ -101,20 +105,33 @@ router.get('/public/games/:slug', async (req, res, next) => {
       origen: req.headers.referer || req.headers.origin || null,
     })
 
-    res.json({ success: true, data: project })
+    res.json({ success: true, data: await withFileUrls(project) })
   } catch (err) { next(err) }
 })
 
-router.get('/public/files/url', async (req, res, next) => {
-    try {
-        const { key } = req.query
-        if (!key) return res.status(400).json({ success: false, message: 'key required' })
-        const url = await getPresignedUrl(key, 3600)
-        res.json({ success: true, data: { url } })
-    } catch (err) { next(err) }
+// Development CDN: with no R2 configured, published files live in a local
+// folder and are served here with the same signed links the CDN Worker checks.
+router.get(/^\/cdn(\/t\/.+)$/, async (req, res) => {
+    const cfg = getPublicFilesConfig()
+    if (cfg.driver !== 'local') return res.status(404).send('Not found')
+
+    const target = cdnToken.parsePath(req.params[0])
+    if (!target) return res.status(404).send('Not found')
+    if (!cdnToken.verify(cfg.signingSecret, target)) return res.status(403).send('Forbidden')
+
+    const file = path.join(cfg.localDir, target.key)
+    if (!file.startsWith(path.resolve(cfg.localDir) + path.sep) || !fs.existsSync(file)) {
+        return res.status(404).send('Not found')
+    }
+    res.setHeader('Content-Type', play.contentTypeFor(file))
+    res.setHeader('Cache-Control', target.key.endsWith('/index.html') ? 'public, max-age=300' : 'public, max-age=31536000, immutable')
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
+    res.sendFile(file)
 })
 
-// Serve WebGL game files from the zip in the bucket
+// Legacy: games uploaded before publishing existed, served from the zip in
+// the bucket. Same rules as the public game page: only the active version of
+// a published project that is not private. New builds are served by the CDN.
 router.get(/^\/play\/([^/]+)\/([^/]+)\/(.+)$/, async (req, res, next) => {
     try {
         const projectId = req.params[0]
@@ -122,7 +139,15 @@ router.get(/^\/play\/([^/]+)\/([^/]+)\/(.+)$/, async (req, res, next) => {
         const filename = req.params[2]
 
         const archivo = await prisma.archivo.findFirst({
-            where: { id_version: versionId, tipo: 'juego_webgl', version: { id_proyecto: projectId } },
+            where: {
+                id_version: versionId,
+                tipo: 'juego_webgl',
+                version: {
+                    id_proyecto: projectId,
+                    es_activa: true,
+                    proyecto: { estado: 'publicado', visibilidad: { not: 'privado' } },
+                },
+            },
             select: { id: true, ruta_storage: true, fecha_subida: true },
         })
 
@@ -195,7 +220,7 @@ router.get('/teacher/evaluations', verifyToken, requireRoles('docente', 'admin')
       .filter(c => { if (seen.has(c.id_proyecto)) return false; seen.add(c.id_proyecto); return true })
       .map(c => ({ ...c.proyecto, mi_comentario: c }))
 
-    res.json({ success: true, data: evaluations })
+    res.json({ success: true, data: await withFileUrls(evaluations) })
   } catch (err) { next(err) }
 })
 

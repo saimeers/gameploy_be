@@ -1,6 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const { deleteFile } = require('./storage.service');
 const { forgetBuild } = require('./play.service');
+const { removePublished } = require('./publish.service');
 
 const prisma = new PrismaClient();
 
@@ -16,20 +17,23 @@ const prisma = new PrismaClient();
  */
 const removeArchivo = async (archivo) => {
   await prisma.archivo.delete({ where: { id: archivo.id } });
-  await removeOrphanedObjects([archivo.ruta_storage]);
+  await removeOrphanedObjects([archivo]);
   return archivo;
 };
 
 /**
- * Delete from the bucket the given objects that no Archivo row points at any
- * more. Call it after deleting the rows.
- * @param {string[]} rutas storage keys, duplicates allowed
+ * Delete from storage the files that no Archivo row points at any more: the
+ * original in the main bucket and its published copy. Call it after deleting
+ * the rows.
+ * @param {{ ruta_storage: string, ruta_publica?: string | null }[]} archivos duplicates allowed
  */
-const removeOrphanedObjects = async (rutas) => {
-  for (const ruta of new Set(rutas)) {
+const removeOrphanedObjects = async (archivos) => {
+  const byKey = new Map(archivos.map(a => [a.ruta_storage, a.ruta_publica]));
+  for (const [ruta, rutaPublica] of byKey) {
     const stillReferenced = await prisma.archivo.count({ where: { ruta_storage: ruta } });
     if (stillReferenced === 0) {
       await deleteFile(ruta).catch(() => {});
+      await removePublished(rutaPublica).catch(() => {});
       forgetBuild(ruta);
     }
   }

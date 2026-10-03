@@ -1,5 +1,6 @@
 const projectService = require('../services/project.service');
 const visitService = require('../services/visit.service');
+const { withFileUrls } = require('../services/fileUrls');
 const { success } = require('../utils/response');
 
 const create = async (req, res, next) => {
@@ -13,7 +14,7 @@ const getBySlug = async (req, res, next) => {
   try {
     const project = await projectService.getProjectBySlug(req.params.slug, req.user);
     visitService.recordVisit(project.id, { ip: req.ip, origen: req.headers.referer || null });
-    success(res, { data: project });
+    success(res, { data: await withFileUrls(project) });
   } catch (err) { next(err); }
 };
 
@@ -24,7 +25,7 @@ const getMine = async (req, res, next) => {
       page: Number(page) || 1,
       limit: Number(limit) || 12,
     });
-    success(res, { data: result.projects, meta: { total: result.total, page: result.page, limit: result.limit } });
+    success(res, { data: await withFileUrls(result.projects), meta: { total: result.total, page: result.page, limit: result.limit } });
   } catch (err) { next(err); }
 };
 

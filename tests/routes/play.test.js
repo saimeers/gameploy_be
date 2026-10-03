@@ -68,12 +68,26 @@ describe('GET /play/:projectId/:versionId/*', () => {
     expect(getObjectBuffer).not.toHaveBeenCalled()
   })
 
-  it('busca el build solo dentro del proyecto de la URL', async () => {
+  it('solo sirve la versión activa de un proyecto publicado que no es privado', async () => {
     await request(app).get(`${URL}/index.html`)
 
     expect(mockPrisma.archivo.findFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id_version: 'v1', tipo: 'juego_webgl', version: { id_proyecto: 'p1' } },
+      where: {
+        id_version: 'v1',
+        tipo: 'juego_webgl',
+        version: {
+          id_proyecto: 'p1',
+          es_activa: true,
+          proyecto: { estado: 'publicado', visibilidad: { not: 'privado' } },
+        },
+      },
     }))
+  })
+
+  it('ya no firma archivos a pedido: /public/files/url no existe', async () => {
+    const res = await request(app).get('/api/v1/public/files/url?key=projects/p1/versions/v1/game.zip')
+
+    expect(res.status).toBe(404)
   })
 
   it('responde 404 si la versión no tiene juego o el archivo no está en el .zip', async () => {

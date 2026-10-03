@@ -1,10 +1,11 @@
 const userService = require('../services/user.service');
 const { success } = require('../utils/response');
+const { withFileUrls } = require('../services/fileUrls');
 
 const getMe = async (req, res, next) => {
   try {
     const profile = await userService.getProfile(req.user.dbUser.id);
-    success(res, { data: profile });
+    success(res, { data: await withFileUrls(profile) });
   } catch (err) { next(err); }
 };
 

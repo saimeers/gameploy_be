@@ -150,6 +150,12 @@ model Archivo {
   tipo           FileType
   nombre_archivo String
   ruta_storage   String
+  /// Published copy that players download (R2 or the local dev folder):
+  /// builds/<id>/ for a game, media/<id>/<name> for an image. Null when not
+  /// published yet. Inherited rows share it, like ruta_storage.
+  ruta_publica   String?
+  /// Files of a published game build with their sizes and upload checks.
+  manifiesto     Json?
   tamanio_bytes  BigInt
   fecha_subida   DateTime        @default(now())
   id_version     String

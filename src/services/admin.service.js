@@ -2,7 +2,8 @@ const { PrismaClient } = require('@prisma/client');
 const { NotFoundError, ConflictError, ValidationError } = require('../utils/errors');
 const { removeArchivo } = require('./archivo.service');
 const { deleteProjectAndFiles } = require('./project.service');
-const { loadBuild } = require('./play.service');
+const { loadBuild, describeBuild } = require('./play.service');
+const { getPresignedUrl } = require('./storage.service');
 
 const prisma = new PrismaClient();
 
@@ -98,18 +99,16 @@ const getBuildContents = async (fileId) => {
   if (!archivo) throw new NotFoundError('File not found');
   if (archivo.tipo !== 'juego_webgl') throw new ValidationError('Only game builds have contents');
 
-  const build = await loadBuild(archivo.ruta_storage);
-  const files = [...build.files]
-    .map(([path, data]) => ({ path: path.slice(build.root.length), size: data.length }))
-    .sort((a, b) => a.path.localeCompare(b.path));
+  // Published builds keep their manifest; older ones are read from the zip.
+  if (archivo.manifiesto) return archivo.manifiesto;
+  return describeBuild(await loadBuild(archivo.ruta_storage));
+};
 
-  return {
-    root: build.root,
-    totalBytes: build.bytes,
-    files,
-    compressed: files.some(f => /^Build\/.*\.(gz|br|unityweb)$/i.test(f.path)),
-    pwa: files.some(f => f.path === 'manifest.webmanifest' || f.path === 'ServiceWorker.js'),
-  };
+/** Short-lived link to download the original upload of any file. */
+const getDownloadUrl = async (fileId) => {
+  const archivo = await prisma.archivo.findUnique({ where: { id: fileId } });
+  if (!archivo) throw new NotFoundError('File not found');
+  return { url: await getPresignedUrl(archivo.ruta_storage, 300, archivo.nombre_archivo) };
 };
 
 /**
@@ -157,6 +156,7 @@ module.exports = {
   toggleFeatured,
   adminDeleteProject,
   getBuildContents,
+  getDownloadUrl,
   adminDeleteFile,
   approveUser,
 };
