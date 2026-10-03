@@ -162,4 +162,57 @@ router.patch('/:id/publish', verifyToken, requireRegisteredUser, c.publish);
  */
 router.get('/:id/visits', verifyToken, requireRegisteredUser, c.getVisits);
 
+/**
+ * @swagger
+ * /projects/{id}/slug:
+ *   get:
+ *     summary: Check whether a project can use a slug
+ *     description: >
+ *       The input is normalised first ("Mi Juego" → "mi-juego"). A slug is
+ *       available when no other project uses it now or used it before. Owner
+ *       or admin only.
+ *     tags: [Projects]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: slug
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: "{ slug, valid, available, reason }" }
+ *   patch:
+ *     summary: Change the slug of a project
+ *     description: >
+ *       The previous slug keeps working: /public/games/{previous} returns the
+ *       project, whose `slug` field holds the current one.
+ *     tags: [Projects]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [slug]
+ *             properties:
+ *               slug: { type: string }
+ *     responses:
+ *       200: { description: Updated project }
+ *       422: { description: Invalid slug }
+ *       409: { description: Slug already in use }
+ */
+router.get('/:id/slug', verifyToken, requireRegisteredUser, c.checkSlug);
+router.patch('/:id/slug', verifyToken, requireRegisteredUser, c.changeSlug);
+
 module.exports = router;

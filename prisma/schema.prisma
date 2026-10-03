@@ -101,8 +101,21 @@ model Proyecto {
   controles         ControlJuego[]
   comentarios       Comentario[]
   visitas           Visita[]
+  slugs_anteriores  SlugAnterior[]
 
   @@map("proyectos")
+}
+
+/// Slugs a project had before its owner changed it. They keep the links that
+/// were already shared working, and no other project can take them.
+model SlugAnterior {
+  slug         String   @id
+  fecha_cambio DateTime @default(now())
+  id_proyecto  String
+  proyecto     Proyecto @relation(fields: [id_proyecto], references: [id], onDelete: Cascade)
+
+  @@index([id_proyecto])
+  @@map("slugs_anteriores")
 }
 
 model ProyectoEtiqueta {

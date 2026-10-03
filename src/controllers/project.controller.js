@@ -68,4 +68,20 @@ const getVisits = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { create, getBySlug, getMine, update, publish, remove, getMyVisits, getVisits };
+const checkSlug = async (req, res, next) => {
+  try {
+    const result = await projectService.checkSlug(req.params.id, req.query.slug, req.user);
+    success(res, { data: result });
+  } catch (err) { next(err); }
+};
+
+const changeSlug = async (req, res, next) => {
+  try {
+    const project = await projectService.changeSlug(req.params.id, req.body.slug, req.user);
+    success(res, { data: project, message: 'Slug updated' });
+  } catch (err) { next(err); }
+};
+
+module.exports = {
+  create, getBySlug, getMine, update, publish, remove, getMyVisits, getVisits, checkSlug, changeSlug,
+};

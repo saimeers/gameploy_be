@@ -1,4 +1,4 @@
-const { generateSlug } = require('../../src/utils/slug')
+const { generateSlug, slugify, isValidSlug } = require('../../src/utils/slug')
 
 describe('generateSlug', () => {
   it('pasa a minúsculas y une las palabras con guiones', () => {
@@ -21,5 +21,30 @@ describe('generateSlug', () => {
 
   it('añade un sufijo distinto a cada llamada, para que el slug sea único', () => {
     expect(generateSlug('Mismo nombre')).not.toBe(generateSlug('Mismo nombre'))
+  })
+})
+
+describe('slugify', () => {
+  it('normaliza lo que escribe el estudiante', () => {
+    expect(slugify('  Mi Juego -- Ñandú  ')).toBe('mi-juego-nandu')
+    expect(slugify('¡Hola!')).toBe('hola')
+    expect(slugify(undefined)).toBe('')
+  })
+})
+
+describe('isValidSlug', () => {
+  it('acepta letras, números y guiones simples entre 3 y 60 caracteres', () => {
+    expect(isValidSlug('memoria-2025')).toBe(true)
+    expect(isValidSlug('ab')).toBe(false)
+    expect(isValidSlug('a'.repeat(61))).toBe(false)
+    expect(isValidSlug('mi--juego')).toBe(false)
+    expect(isValidSlug('-juego')).toBe(false)
+    expect(isValidSlug('Juego')).toBe(false)
+  })
+})
+
+describe('generateSlug con nombres sin letras', () => {
+  it('usa una base genérica en vez de empezar por guion', () => {
+    expect(generateSlug('¿?')).toMatch(/^juego-[a-z0-9]{6}$/)
   })
 })

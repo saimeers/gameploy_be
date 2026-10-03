@@ -5,6 +5,7 @@ const prisma = new PrismaClient()
 const { getPresignedUrl } = require('../services/storage.service')
 const play = require('../services/play.service')
 const visitService = require('../services/visit.service')
+const projectService = require('../services/project.service')
 
 const authRoutes = require('./auth.routes');
 const userRoutes = require('./user.routes');
@@ -28,8 +29,10 @@ router.use('/projects/:projectId/controls', controlRoutes)
 
 router.get('/public/games/:slug', async (req, res, next) => {
   try {
-    const project = await prisma.proyecto.findUnique({
-      where: { slug: req.params.slug },
+    // Old slugs still resolve: the frontend redirects to the current one
+    const projectId = await projectService.resolveSlug(req.params.slug)
+    const project = projectId && await prisma.proyecto.findUnique({
+      where: { id: projectId },
       include: {
         usuario:    { select: { nombre: true } },
         categoria:  true,
