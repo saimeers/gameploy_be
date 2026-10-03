@@ -6,6 +6,8 @@ const { verifyToken, requireRegisteredUser } = require('../middlewares/auth.midd
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 500 * 1024 * 1024 }, // 500 MB
+  // Browsers send file names as UTF-8: "Portada Ñandú.png" must not arrive as latin1.
+  defParamCharset: 'utf8',
 });
 
 /**
