@@ -3,10 +3,7 @@ const { PrismaClient } = require('@prisma/client')
 const prisma = new PrismaClient()
 
 const { getPresignedUrl } = require('../services/storage.service')
-const AdmZip = require('adm-zip')
-const path = require('path')
-const https = require('https')
-const http = require('http')
+const play = require('../services/play.service')
 
 const authRoutes = require('./auth.routes');
 const userRoutes = require('./user.routes');
@@ -112,101 +109,52 @@ router.get('/public/files/url', async (req, res, next) => {
     } catch (err) { next(err) }
 })
 
-// Serve WebGL game files from zip in bucket
+// Serve WebGL game files from the zip in the bucket
 router.get(/^\/play\/([^/]+)\/([^/]+)\/(.+)$/, async (req, res, next) => {
     try {
-
         const projectId = req.params[0]
         const versionId = req.params[1]
         const filename = req.params[2]
 
         const archivo = await prisma.archivo.findFirst({
-            where: {
-                id_version: versionId,
-                tipo: 'juego_webgl'
-            }
+            where: { id_version: versionId, tipo: 'juego_webgl', version: { id_proyecto: projectId } },
+            select: { id: true, ruta_storage: true, fecha_subida: true },
         })
 
         if (!archivo) {
             return res.status(404).send('Game not found')
         }
 
-        const zipUrl = await getPresignedUrl(archivo.ruta_storage, 300)
-
-        const zipBuffer = await new Promise((resolve, reject) => {
-            const protocol = zipUrl.startsWith('https') ? https : http
-            const chunks = []
-
-            protocol.get(zipUrl, resp => {
-                resp.on('data', chunk => chunks.push(chunk))
-                resp.on('end', () => resolve(Buffer.concat(chunks)))
-                resp.on('error', reject)
-            }).on('error', reject)
-        })
-
-        const zip = new AdmZip(zipBuffer)
-
-        // Detect root folder automatically
-        const entries = zip.getEntries()
-
-        const indexEntry = entries.find(e =>
-            e.entryName.toLowerCase().endsWith('/index.html')
-        )
-
-        let rootFolder = ''
-
-        if (indexEntry) {
-            rootFolder = indexEntry.entryName.replace(/index\.html$/i, '')
-        }
-
-        // Build final path
-        let targetFile = filename
-
-        // If file is not already prefixed with root folder
-        if (rootFolder && !filename.startsWith(rootFolder)) {
-            targetFile = `${rootFolder}${filename}`
-        }
-
-        const cleanFilename = targetFile.replace(/^\/+/, '')
-
-        const entry =
-            zip.getEntry(cleanFilename) ||
-            zip.getEntry(decodeURIComponent(cleanFilename))
-
-        if (!entry) {
-            return res.status(404).send(`File not found in zip: ${cleanFilename}`)
-        }
-
-        const ext = path.extname(cleanFilename).toLowerCase()
-
-        const mimeTypes = {
-            '.html': 'text/html',
-            '.js': 'application/javascript',
-            '.mjs': 'application/javascript',
-            '.wasm': 'application/wasm',
-            '.data': 'application/octet-stream',
-            '.css': 'text/css',
-            '.json': 'application/json',
-            '.png': 'image/png',
-            '.jpg': 'image/jpeg',
-            '.jpeg': 'image/jpeg',
-            '.svg': 'image/svg+xml',
-            '.ico': 'image/x-icon',
-            '.txt': 'text/plain',
-            '.gz': 'application/gzip',
-            '.br': 'application/octet-stream',
-        }
-
-        const contentType =
-            mimeTypes[ext] ?? 'application/octet-stream'
-
-        res.setHeader('Content-Type', contentType)
-
-        // Unity WebGL
+        // Unity WebGL runs in an iframe of the frontend's origin
         res.setHeader('Access-Control-Allow-Origin', '*')
         res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
 
-        res.send(entry.getData())
+        // Each upload creates a new Archivo row, so its id identifies the
+        // content of every file in the build: browsers keep their copy and
+        // only revalidate, which answers 304 without touching the zip.
+        const etag = `"${archivo.id}-${play.SERVE_REVISION}"`
+        res.setHeader('ETag', etag)
+        res.setHeader('Cache-Control', 'public, no-cache')
+        res.setHeader('Last-Modified', new Date(archivo.fecha_subida).toUTCString())
+        const cached = (req.headers['if-none-match'] ?? '').split(',').map(t => t.trim())
+        if (cached.includes(etag)) {
+            return res.status(304).end()
+        }
+
+        const build = await play.loadBuild(archivo.ruta_storage)
+        const file = play.findFile(build, filename)
+
+        if (!file) {
+            return res.status(404).send(`File not found in zip: ${filename}`)
+        }
+
+        res.setHeader('Content-Type', play.contentTypeFor(file.name))
+
+        if (play.isEntryPage(build, file.name)) {
+            return res.send(play.injectProgressReporter(file.data.toString('utf8')))
+        }
+
+        res.send(file.data)
 
     } catch (err) {
         next(err)

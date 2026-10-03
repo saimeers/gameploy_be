@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const { deleteFile } = require('./storage.service');
+const { forgetBuild } = require('./play.service');
 
 const prisma = new PrismaClient();
 
@@ -22,6 +23,7 @@ const removeArchivo = async (archivo) => {
 
   if (stillReferenced === 0) {
     await deleteFile(archivo.ruta_storage).catch(() => {});
+    forgetBuild(archivo.ruta_storage);
   }
 
   return archivo;

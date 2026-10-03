@@ -45,6 +45,9 @@ const globalLimiter = rateLimit({
   max: 200,
   standardHeaders: true,
   legacyHeaders: false,
+  // Game files are static and cached: one game boot is ~10 requests, so a
+  // classroom behind a single IP would exhaust the limit and games would break.
+  skip: (req) => req.path.startsWith('/api/v1/play/'),
 });
 
 const authLimiter = rateLimit({

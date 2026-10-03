@@ -32,6 +32,17 @@ const deleteFile = async (key) => {
 };
 
 /**
+ * Download a whole object from the bucket.
+ * @param {string} key
+ * @returns {Promise<Buffer>}
+ */
+const getObjectBuffer = async (key) => {
+  const command = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: key });
+  const { Body } = await storageClient.send(command);
+  return Buffer.from(await Body.transformToByteArray());
+};
+
+/**
  * Generate a pre-signed URL to access a private file.
  * @param {string} key
  * @param {number} expiresIn - seconds (default 1 hour)
@@ -53,4 +64,4 @@ const buildStorageKey = (projectId, versionId, filename) => {
   return `projects/${projectId}/versions/${versionId}/${filename}`;
 };
 
-module.exports = { uploadFile, deleteFile, getPresignedUrl, buildStorageKey };
+module.exports = { uploadFile, deleteFile, getObjectBuffer, getPresignedUrl, buildStorageKey };
