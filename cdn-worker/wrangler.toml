@@ -1,5 +1,5 @@
 # Worker que sirve los juegos y las imágenes de Gameploy desde R2.
-# Despliegue: npx wrangler login && npx wrangler secret put CDN_SIGNING_SECRET && npx wrangler deploy
+# Despliegue (ver README.md): npx wrangler login, npx wrangler deploy y npx wrangler secret put CDN_SIGNING_SECRET
 name = "gameploy-cdn"
 main = "src/index.js"
 compatibility_date = "2026-09-01"

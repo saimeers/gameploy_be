@@ -97,6 +97,24 @@ test('rechaza firmas alteradas y tokens vencidos', async () => {
   assert.equal((await fetchUrl(expired)).status, 403)
 })
 
+test('sin secreto configurado no sirve nada, ni con firmas hechas sin secreto', async () => {
+  const saved = env.CDN_SIGNING_SECRET
+  delete env.CDN_SIGNING_SECRET
+  try {
+    const url = new URL(link('builds/abc/', 'index.html'))
+    const exp = url.pathname.split('/')[2].split('.')[0]
+    for (const guess of ['', 'undefined']) {
+      const sig = signature(guess, 'builds/abc/', Number(exp))
+      const forged = `${BASE}/t/${exp}.${sig}/builds/abc/index.html`
+      assert.equal((await fetchUrl(forged)).status, 403)
+    }
+    assert.equal((await fetchUrl(url.href)).status, 403)
+    assert.equal(bucketReads, 0)
+  } finally {
+    env.CDN_SIGNING_SECRET = saved
+  }
+})
+
 test('sin token o fuera de builds/ y media/ responde 404', async () => {
   assert.equal((await fetchUrl(`${BASE}/builds/abc/index.html`)).status, 404)
   const exp = tokenExpiry()
