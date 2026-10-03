@@ -19,6 +19,7 @@ de los evaluadores y la ejecución en navegador de los builds Unity WebGL.
 | Autenticación | Firebase Admin SDK (verificación de ID tokens) |
 | Almacenamiento | Railway Bucket, S3-compatible (`@aws-sdk/client-s3`) |
 | Correo | Resend |
+| Geolocalización | `geoip-lite` (base GeoLite offline: la IP no sale del servidor) |
 | Documentación | Swagger / OpenAPI 3.0 (`swagger-jsdoc`) |
 | Seguridad | `helmet`, `cors`, `express-rate-limit` |
 
@@ -70,6 +71,7 @@ muestra la documentación.
 | `RESEND_FROM_EMAIL` | Remitente de los correos (dominio verificado) |
 | `ADMIN_EMAIL` | Destinatario de los avisos de registros pendientes |
 | `APP_NAME` | Nombre mostrado en los correos (por defecto `Gameploy`) |
+| `PLAY_CACHE_MB` | Memoria máxima para la caché de builds descomprimidos (por defecto `256`) |
 
 Nunca subir el archivo `.env`: está en `.gitignore`. Al añadir una variable nueva, reflejarla también
 en `.env.example` y en esta tabla.
@@ -185,19 +187,20 @@ a Prisma.
 | `/users` | `GET /me`, `PATCH /me`, `GET /check?email=` | Autenticado |
 | `/users` | `GET /`, `PATCH /:id/role`, `PATCH /:id/status` | admin |
 | `/projects` | `POST /`, `GET /mine`, `PATCH /:id`, `DELETE /:id`, `PATCH /:id/publish` | Propietario (estudiante) o admin |
+| `/projects` | `GET /mine/visits`, `GET /:id/visits`, `GET /:id/slug?slug=`, `PATCH /:id/slug` | Propietario o admin |
 | `/projects/:projectId/versions` | `GET /`, `POST /`, `POST /:versionId/files`, `PATCH /:versionId/activate`, `DELETE /:versionId/files/:fileId` | Propietario |
 | `/projects/:projectId/controls` | `GET /`, `POST /`, `PATCH /reorder`, `PATCH /:controlId`, `DELETE /:controlId` | Lectura pública, escritura del propietario |
 | `/projects/:projectId/comments` | `GET /` | Público |
 | `/projects/:projectId/comments` | `POST /` | docente, admin |
 | `/search` | `GET /?q&categoria&etiquetas&page&limit`, `GET /categorias`, `GET /etiquetas` | Público |
-| `/admin` | `GET /stats`, `GET /projects`, `PATCH /projects/:id/featured`, `DELETE /projects/:id`, `PATCH /comments/:id/moderate`, `PATCH /users/:id/approve`, CRUD de `/categorias` y `/etiquetas` | admin |
+| `/admin` | `GET /stats`, `GET /stats/visits`, `GET /projects`, `PATCH /projects/:id/featured`, `DELETE /projects/:id`, `GET /files/:id/contents`, `PATCH /comments/:id/moderate`, `PATCH /users/:id/approve`, CRUD y `PATCH /:id/status` de `/categorias` y `/etiquetas` | admin |
 | Público | `GET /public/games/:slug`, `GET /public/files/url?key=`, `GET /play/:projectId/:versionId/*` | Público |
 | Docente | `GET /teacher/evaluations` | docente, admin |
 
 ## Modelo de datos
 
 `Rol` → `Usuario` → `Proyecto` → { `VersionProyecto` → `Archivo`, `ControlJuego`, `Comentario`,
-`Visita`, `ProyectoEtiqueta` → `Etiqueta` }, y `Proyecto` → `Categoria`.
+`Visita`, `SlugAnterior`, `ProyectoEtiqueta` → `Etiqueta` }, y `Proyecto` → `Categoria`.
 
 Enumeraciones (sus valores viajan tal cual en la API):
 
@@ -211,8 +214,19 @@ Enumeraciones (sus valores viajan tal cual en la API):
 
 Reglas relevantes:
 
-- El `slug` se genera al crear el proyecto y no cambia al renombrarlo, de modo que los enlaces
-  compartidos siguen siendo válidos.
+- El `slug` se genera al crear el proyecto y no cambia al renombrarlo. El dueño puede elegir otro
+  con `PATCH /projects/:id/slug`; el anterior se guarda en `slugs_anteriores`, así que los enlaces ya
+  compartidos siguen funcionando (`/public/games/:slug` resuelve slugs anteriores y devuelve el
+  proyecto con su slug actual para que el frontend redirija) y ningún otro proyecto puede tomarlo.
+- `PATCH /projects/:id` solo acepta los campos editables (`nombre`, `descripcion`,
+  `instrucciones`, `visibilidad`, `id_categoria`, `etiquetas`); el resto tiene su propio endpoint.
+- Las categorías y etiquetas se **desactivan** (`activo: false`) en vez de borrarse: dejan de
+  ofrecerse en los formularios y filtros, pero los proyectos que las usan las conservan. Solo se
+  pueden eliminar si ningún proyecto las usa (si no, 409). Un proyecto no puede recibir una
+  categoría o etiqueta inactiva nueva.
+- Cada visita guarda `codigo_pais`, `region` y `ciudad`, calculados con `geoip-lite` a partir de la
+  IP del visitante, que no se guarda. La base (~110 MB de memoria) se carga con la primera visita.
+- Borrar un proyecto borra también sus objetos del bucket, salvo los que otra fila aún referencia.
 - Solo una versión por proyecto puede estar activa; crear o activar una desactiva las demás.
 - Subir una `portada` o un `juego_webgl` reemplaza el archivo anterior del mismo tipo en esa versión;
   las `captura` se acumulan.
@@ -238,13 +252,22 @@ Los builds se suben a `POST /projects/:id/versions/:versionId/files` con `fileTy
 `projects/<projectId>/versions/<versionId>/<archivo>`. El acceso a los archivos privados se hace con
 URLs prefirmadas (`GET /public/files/url?key=`).
 
-Para la ejecución en navegador, `GET /play/:projectId/:versionId/*` descarga el `.zip` de la versión,
-lo abre en memoria, detecta la carpeta raíz y devuelve el archivo solicitado con su tipo MIME y
-cabeceras CORS abiertas, de forma que el frontend pueda incrustarlo en un `<iframe>`. Por ese motivo
-`helmet` corre con CSP, frameguard, COEP y COOP desactivados.
+Para la ejecución en navegador, `GET /play/:projectId/:versionId/*` (`services/play.service.js`)
+devuelve los archivos del build con su tipo MIME y cabeceras CORS abiertas, de forma que el frontend
+pueda incrustarlo en un `<iframe>`. Por ese motivo `helmet` corre con CSP, frameguard, COEP y COOP
+desactivados.
 
-> El zip se descomprime en cada petición y no hay caché: es el punto más costoso del sistema y el
-> primer candidato a optimizar.
+- Cada build se descarga del bucket una sola vez, se descomprime en memoria y queda en una caché
+  LRU limitada por `PLAY_CACHE_MB`; las peticiones simultáneas comparten la descarga.
+- Las respuestas llevan un `ETag` ligado a la fila de `Archivo` (cada subida crea una nueva) y
+  `Cache-Control: no-cache`: el navegador guarda los archivos y solo revalida, con un 304 que no
+  toca el `.zip`. `SERVE_REVISION` forma parte del `ETag`; súbelo si cambia la forma de servir.
+- Al `index.html` se le inyecta un script que envuelve `createUnityInstance` y avisa a la página
+  contenedora, con `postMessage`, del progreso de carga (`boot`, `progress`, `ready`, `error`).
+- Los archivos del juego no cuentan en el límite global de peticiones: un arranque son unas diez,
+  y un salón detrás de una misma IP lo agotaría.
+- Los builds comprimidos (Gzip/Brotli) no se pueden servir, porque los archivos van sin
+  `Content-Encoding`; el formulario de subida los rechaza.
 
 ## Despliegue
 
