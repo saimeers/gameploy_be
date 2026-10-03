@@ -171,8 +171,14 @@ model Visita {
   id          String   @id @default(uuid())
   fecha       DateTime @default(now())
   origen      String?
+  /// Location resolved from the visitor's IP when the visit is recorded. The
+  /// IP itself is never stored.
+  codigo_pais String?  @db.Char(2)
+  region      String?
+  ciudad      String?
   id_proyecto String
   proyecto    Proyecto @relation(fields: [id_proyecto], references: [id], onDelete: Cascade)
 
+  @@index([id_proyecto, fecha])
   @@map("visitas")
 }

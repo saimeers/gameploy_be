@@ -129,10 +129,6 @@ const deleteProject = async (projectId, requestingUser) => {
   await prisma.proyecto.delete({ where: { id: projectId } });
 };
 
-const recordVisit = async (projectId, origen = null) => {
-  await prisma.visita.create({ data: { id_proyecto: projectId, origen } }).catch(() => {});
-};
-
 module.exports = {
   createProject,
   getProjectBySlug,
@@ -140,5 +136,4 @@ module.exports = {
   updateProject,
   publishProject,
   deleteProject,
-  recordVisit,
 };

@@ -1,4 +1,5 @@
 const projectService = require('../services/project.service');
+const visitService = require('../services/visit.service');
 const { success } = require('../utils/response');
 
 const create = async (req, res, next) => {
@@ -11,7 +12,7 @@ const create = async (req, res, next) => {
 const getBySlug = async (req, res, next) => {
   try {
     const project = await projectService.getProjectBySlug(req.params.slug, req.user);
-    await projectService.recordVisit(project.id, req.headers.referer || null);
+    visitService.recordVisit(project.id, { ip: req.ip, origen: req.headers.referer || null });
     success(res, { data: project });
   } catch (err) { next(err); }
 };
@@ -48,4 +49,23 @@ const remove = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { create, getBySlug, getMine, update, publish, remove };
+const getMyVisits = async (req, res, next) => {
+  try {
+    const stats = await visitService.getVisitStats({
+      ownerId: req.user.dbUser.id,
+      days: visitService.parseDays(req.query.days),
+    });
+    success(res, { data: stats });
+  } catch (err) { next(err); }
+};
+
+const getVisits = async (req, res, next) => {
+  try {
+    const stats = await visitService.getProjectVisitStats(
+      req.params.id, req.user, visitService.parseDays(req.query.days),
+    );
+    success(res, { data: stats });
+  } catch (err) { next(err); }
+};
+
+module.exports = { create, getBySlug, getMine, update, publish, remove, getMyVisits, getVisits };

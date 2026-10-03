@@ -51,6 +51,28 @@ router.get('/mine', verifyToken, requireRegisteredUser, c.getMine);
 
 /**
  * @swagger
+ * /projects/mine/visits:
+ *   get:
+ *     summary: Where the visits to my projects come from
+ *     description: >
+ *       Visits grouped by country (ISO 3166-1 alpha-2 code, null when unknown)
+ *       and the ten most visited cities. The location is resolved from the
+ *       visitor's IP when the visit is recorded; the IP is not stored.
+ *     tags: [Projects]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: days
+ *         description: Only the last N days (1-365). All time when omitted.
+ *         schema: { type: integer }
+ *     responses:
+ *       200: { description: "{ total, days, countries: [{ codigo_pais, visitas }], cities: [{ codigo_pais, region, ciudad, visitas }] }" }
+ */
+router.get('/mine/visits', verifyToken, requireRegisteredUser, c.getMyVisits);
+
+/**
+ * @swagger
  * /projects/{slug}:
  *   get:
  *     summary: Get a project by its slug (public)
@@ -115,5 +137,29 @@ router.delete('/:id', verifyToken, requireRegisteredUser, c.remove);
  *       200: { description: Project published }
  */
 router.patch('/:id/publish', verifyToken, requireRegisteredUser, c.publish);
+
+/**
+ * @swagger
+ * /projects/{id}/visits:
+ *   get:
+ *     summary: Where the visits to one project come from
+ *     description: Same shape as /projects/mine/visits. Owner or admin only.
+ *     tags: [Projects]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: days
+ *         schema: { type: integer }
+ *     responses:
+ *       200: { description: Visit stats }
+ *       403: { description: Not the owner }
+ *       404: { description: Not found }
+ */
+router.get('/:id/visits', verifyToken, requireRegisteredUser, c.getVisits);
 
 module.exports = router;

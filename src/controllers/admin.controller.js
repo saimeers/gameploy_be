@@ -1,10 +1,18 @@
 const adminService = require('../services/admin.service');
+const visitService = require('../services/visit.service');
 const userService = require('../services/user.service');
 const { success } = require('../utils/response');
 
 const getStats = async (req, res, next) => {
   try {
     const stats = await adminService.getStats();
+    success(res, { data: stats });
+  } catch (err) { next(err); }
+};
+
+const getVisitStats = async (req, res, next) => {
+  try {
+    const stats = await visitService.getVisitStats({ days: visitService.parseDays(req.query.days) });
     success(res, { data: stats });
   } catch (err) { next(err); }
 };
@@ -61,6 +69,7 @@ const approveUser = async (req, res, next) => {
 
 module.exports = {
   getStats,
+  getVisitStats,
   getAllProjects,
   getProject,
   toggleFeatured,

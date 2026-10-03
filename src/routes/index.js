@@ -4,6 +4,7 @@ const prisma = new PrismaClient()
 
 const { getPresignedUrl } = require('../services/storage.service')
 const play = require('../services/play.service')
+const visitService = require('../services/visit.service')
 
 const authRoutes = require('./auth.routes');
 const userRoutes = require('./user.routes');
@@ -91,10 +92,11 @@ router.get('/public/games/:slug', async (req, res, next) => {
       }
     }
 
-    const origen = req.headers.referer || req.headers.origin || null
-    await prisma.visita.create({
-      data: { id_proyecto: project.id, origen },
-    }).catch(() => {})
+    // Not awaited: locating and storing the visit must not delay the page
+    visitService.recordVisit(project.id, {
+      ip: req.ip,
+      origen: req.headers.referer || req.headers.origin || null,
+    })
 
     res.json({ success: true, data: project })
   } catch (err) { next(err) }

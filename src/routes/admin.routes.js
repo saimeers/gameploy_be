@@ -24,6 +24,24 @@ router.get('/stats', c.getStats);
 
 /**
  * @swagger
+ * /admin/stats/visits:
+ *   get:
+ *     summary: Where the visits to all projects come from
+ *     description: Same shape as /projects/mine/visits, across the platform.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: days
+ *         schema: { type: integer }
+ *     responses:
+ *       200: { description: Visit stats }
+ */
+router.get('/stats/visits', c.getVisitStats);
+
+/**
+ * @swagger
  * /admin/projects:
  *   get:
  *     summary: List all projects (admin view)
