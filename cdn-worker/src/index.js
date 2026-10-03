@@ -24,24 +24,30 @@ export default {
     const cacheKey = new Request(`${url.origin}/__objects/${encodeURI(target.key)}`)
     const cache = caches.default
     let response = await cache.match(cacheKey)
+    const hit = Boolean(response)
 
     if (!response) {
       const object = await env.BUCKET.get(target.key)
       if (!object) return text(404, 'Not found')
 
-      const headers = new Headers()
-      object.writeHttpMetadata(headers)
-      headers.set('etag', object.httpEtag)
-      headers.set('x-content-type-options', 'nosniff')
-      headers.set('cross-origin-resource-policy', 'cross-origin')
-      response = new Response(object.body, { headers })
+      const metadata = new Headers()
+      object.writeHttpMetadata(metadata)
+      metadata.set('etag', object.httpEtag)
+      metadata.set('x-content-type-options', 'nosniff')
+      metadata.set('cross-origin-resource-policy', 'cross-origin')
+      response = new Response(object.body, { headers: metadata })
       ctx.waitUntil(cache.put(cacheKey, response.clone()).catch(() => {}))
     }
 
-    if (request.headers.get('if-none-match') === response.headers.get('etag')) {
-      return new Response(null, { status: 304, headers: response.headers })
+    // x-cache dice si salió de la caché del borde (Cloudflare no añade
+    // cf-cache-status a lo que un Worker sirve con la Cache API).
+    const headers = new Headers(response.headers)
+    headers.set('x-cache', hit ? 'HIT' : 'MISS')
+
+    if (request.headers.get('if-none-match') === headers.get('etag')) {
+      return new Response(null, { status: 304, headers })
     }
-    if (request.method === 'HEAD') return new Response(null, { headers: response.headers })
-    return response
+    if (request.method === 'HEAD') return new Response(null, { headers })
+    return new Response(response.body, { status: response.status, headers })
   },
 }

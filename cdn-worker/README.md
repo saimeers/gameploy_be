@@ -41,7 +41,8 @@ en su variable `CDN_SIGNING_SECRET`, y `CDN_URL=https://cdn-gameploy.saimers.dev
 `wrangler deploy` crea el registro DNS de `cdn-gameploy.saimers.dev`; si ya existía un registro con
 ese nombre, hay que borrarlo antes en el panel de DNS.
 
-Comprobación: un enlace inventado debe dar 403.
+Comprobación: un enlace inventado debe dar 403. En los enlaces válidos, la cabecera `x-cache` dice si
+el archivo salió de la caché del borde (`HIT`) o de R2 (`MISS`).
 
 ```bash
 curl -I https://cdn-gameploy.saimers.dev/t/1.aaaaaaaaaaaaaaaaaaaaaaaa/builds/x/index.html

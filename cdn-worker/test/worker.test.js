@@ -136,13 +136,18 @@ test('no permite salir del prefijo con ..', async () => {
 })
 
 test('la segunda petición sale de la caché, aunque llegue con otro token', async () => {
-  await fetchUrl(link('media/img1/', 'portada.png'))
+  const first = await fetchUrl(link('media/img1/', 'portada.png'))
   const later = link('media/img1/', 'portada.png', Date.now() + 2 * 60 * 60 * 1000)
 
   const res = await fetchUrl(later)
 
   assert.equal(res.status, 200)
+  assert.equal(await res.text(), 'png')
   assert.equal(bucketReads, 1)
+  assert.equal(first.headers.get('x-cache'), 'MISS')
+  assert.equal(res.headers.get('x-cache'), 'HIT')
+  // La copia guardada no arrastra la marca de la primera respuesta
+  assert.equal(cacheStore.values().next().value.headers.get('x-cache'), null)
 })
 
 test('responde 304 si el navegador ya tiene el archivo', async () => {
