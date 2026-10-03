@@ -1,10 +1,14 @@
 const { PrismaClient } = require('@prisma/client');
-const { NotFoundError, ForbiddenError } = require('../utils/errors');
-const { generateSlug } = require('../utils/slug');
+const { NotFoundError, ForbiddenError, ValidationError, ConflictError } = require('../utils/errors');
+const { generateSlug, slugify, isValidSlug, SLUG_MIN, SLUG_MAX } = require('../utils/slug');
+const { assertActiveAssignments } = require('./catalog.service');
+const { removeOrphanedObjects } = require('./archivo.service');
+const { invalidatePublicData } = require('./cache.service');
 
 const prisma = new PrismaClient();
 
 const createProject = async (userId, { nombre, descripcion, instrucciones, id_categoria, etiquetas = [] }) => {
+  await assertActiveAssignments({ id_categoria, etiquetas });
   const slug = generateSlug(nombre);
 
   return prisma.proyecto.create({
@@ -23,9 +27,24 @@ const createProject = async (userId, { nombre, descripcion, instrucciones, id_ca
   });
 };
 
+/**
+ * Id of the project a slug points to: its current slug or one it had before,
+ * so links shared before a slug change keep working.
+ * @returns {Promise<string | null>}
+ */
+const resolveSlug = async (slug) => {
+  const current = await prisma.proyecto.findUnique({ where: { slug }, select: { id: true } });
+  if (current) return current.id;
+  const previous = await prisma.slugAnterior.findUnique({ where: { slug }, select: { id_proyecto: true } });
+  return previous?.id_proyecto ?? null;
+};
+
 const getProjectBySlug = async (slug, requestingUser = null) => {
+  const id = await resolveSlug(slug);
+  if (!id) throw new NotFoundError('Project not found');
+
   const project = await prisma.proyecto.findUnique({
-    where: { slug },
+    where: { id },
     include: {
       usuario: { select: { id: true, nombre: true } },
       categoria: true,
@@ -46,11 +65,15 @@ const getProjectBySlug = async (slug, requestingUser = null) => {
 
   if (!project) throw new NotFoundError('Project not found');
 
-  // Visibility check
-  if (project.visibilidad === 'privado') {
-    if (!requestingUser || requestingUser.dbUser.id !== project.id_usuario) {
-      throw new ForbiddenError('This project is private');
-    }
+  // Drafts and private projects: only their owner or an admin
+  const isOwnerOrAdmin = !!requestingUser?.dbUser && (
+    requestingUser.dbUser.id === project.id_usuario || requestingUser.dbUser.rol?.nombre === 'admin'
+  );
+  if (project.visibilidad === 'privado' && !isOwnerOrAdmin) {
+    throw new ForbiddenError('This project is private');
+  }
+  if (project.estado !== 'publicado' && !isOwnerOrAdmin) {
+    throw new ForbiddenError('This project is not published');
   }
 
   return project;
@@ -85,14 +108,30 @@ const getMyProjects = async (userId, { page = 1, limit = 12 } = {}) => {
   return { projects, total, page, limit }
 }
 
+/** Fields a student may change with PATCH /projects/:id. */
+const EDITABLE_FIELDS = ['nombre', 'descripcion', 'instrucciones', 'visibilidad', 'id_categoria'];
+
 const updateProject = async (projectId, userId, data) => {
-  const project = await prisma.proyecto.findUnique({ where: { id: projectId } });
+  const project = await prisma.proyecto.findUnique({
+    where: { id: projectId },
+    include: { etiquetas: { select: { id_etiqueta: true } } },
+  });
   if (!project) throw new NotFoundError('Project not found');
   if (project.id_usuario !== userId) throw new ForbiddenError('You do not own this project');
 
-  const { etiquetas, ...rest } = data;
+  await assertActiveAssignments(data, {
+    id_categoria: project.id_categoria,
+    etiquetas: project.etiquetas.map(e => e.id_etiqueta),
+  });
 
-  return prisma.proyecto.update({
+  // Anything else (slug, estado, destacado, id_usuario...) has its own
+  // endpoint with its own checks, so it is ignored here.
+  const { etiquetas } = data;
+  const rest = Object.fromEntries(
+    EDITABLE_FIELDS.filter(field => data[field] !== undefined).map(field => [field, data[field]]),
+  );
+
+  const updated = await prisma.proyecto.update({
     where: { id: projectId },
     data: {
       ...rest,
@@ -105,6 +144,8 @@ const updateProject = async (projectId, userId, data) => {
     },
     include: { categoria: true, etiquetas: { include: { etiqueta: true } } },
   });
+  await invalidatePublicData();
+  return updated;
 };
 
 const publishProject = async (projectId, userId) => {
@@ -112,10 +153,90 @@ const publishProject = async (projectId, userId) => {
   if (!project) throw new NotFoundError('Project not found');
   if (project.id_usuario !== userId) throw new ForbiddenError('You do not own this project');
 
-  return prisma.proyecto.update({
+  const updated = await prisma.proyecto.update({
     where: { id: projectId },
     data: { estado: 'publicado', fecha_publicacion: new Date() },
   });
+  await invalidatePublicData();
+  return updated;
+};
+
+const assertCanEdit = (project, requestingUser) => {
+  const isOwner = project.id_usuario === requestingUser.dbUser.id;
+  const isAdmin = requestingUser.dbUser.rol.nombre === 'admin';
+  if (!isOwner && !isAdmin) throw new ForbiddenError('You do not own this project');
+};
+
+/**
+ * Whether a project can use a slug. The input is normalised first, so
+ * "Mi Juego" is checked as "mi-juego".
+ * @returns {Promise<{ slug: string, valid: boolean, available: boolean, reason: string | null }>}
+ */
+const checkSlug = async (projectId, input, requestingUser) => {
+  const project = await prisma.proyecto.findUnique({ where: { id: projectId } });
+  if (!project) throw new NotFoundError('Project not found');
+  assertCanEdit(project, requestingUser);
+
+  const slug = slugify(input);
+  if (!isValidSlug(slug)) {
+    return { slug, valid: false, available: false, reason: `Use ${SLUG_MIN} to ${SLUG_MAX} letters, numbers or hyphens` };
+  }
+  if (slug === project.slug) return { slug, valid: true, available: true, reason: null };
+
+  const [current, previous] = await Promise.all([
+    prisma.proyecto.findUnique({ where: { slug }, select: { id: true } }),
+    prisma.slugAnterior.findUnique({ where: { slug }, select: { id_proyecto: true } }),
+  ]);
+  // A project may take back one of its own previous slugs.
+  const takenByOther = current || (previous && previous.id_proyecto !== projectId);
+  return {
+    slug,
+    valid: true,
+    available: !takenByOther,
+    reason: takenByOther ? 'Already in use' : null,
+  };
+};
+
+/**
+ * Change the slug of a project. The old slug is kept as a previous slug, so
+ * links that were already shared redirect to the new one.
+ */
+const changeSlug = async (projectId, input, requestingUser) => {
+  const check = await checkSlug(projectId, input, requestingUser);
+  if (!check.valid) throw new ValidationError(check.reason);
+  if (!check.available) throw new ConflictError('Slug already in use');
+
+  const project = await prisma.proyecto.findUnique({ where: { id: projectId } });
+  if (check.slug === project.slug) return project;
+
+  try {
+    const [, , updated] = await prisma.$transaction([
+      prisma.slugAnterior.deleteMany({ where: { slug: check.slug, id_proyecto: projectId } }),
+      prisma.slugAnterior.create({ data: { slug: project.slug, id_proyecto: projectId } }),
+      prisma.proyecto.update({ where: { id: projectId }, data: { slug: check.slug } }),
+    ]);
+    await invalidatePublicData();
+    return updated;
+  } catch (err) {
+    // Another project took the slug between the check and the update.
+    if (err.code === 'P2002') throw new ConflictError('Slug already in use');
+    throw err;
+  }
+};
+
+/**
+ * Delete a project with everything it owns. The database cascades to versions,
+ * files, controls, comments and visits; the objects in the bucket are removed
+ * afterwards, unless another row still points at them.
+ */
+const deleteProjectAndFiles = async (projectId) => {
+  const archivos = await prisma.archivo.findMany({
+    where: { version: { id_proyecto: projectId } },
+    select: { ruta_storage: true, ruta_publica: true },
+  });
+  await prisma.proyecto.delete({ where: { id: projectId } });
+  await invalidatePublicData();
+  await removeOrphanedObjects(archivos);
 };
 
 const deleteProject = async (projectId, requestingUser) => {
@@ -126,11 +247,7 @@ const deleteProject = async (projectId, requestingUser) => {
   const isAdmin = requestingUser.dbUser.rol.nombre === 'admin';
   if (!isOwner && !isAdmin) throw new ForbiddenError('Not authorized to delete this project');
 
-  await prisma.proyecto.delete({ where: { id: projectId } });
-};
-
-const recordVisit = async (projectId, origen = null) => {
-  await prisma.visita.create({ data: { id_proyecto: projectId, origen } }).catch(() => {});
+  await deleteProjectAndFiles(projectId);
 };
 
 module.exports = {
@@ -140,5 +257,8 @@ module.exports = {
   updateProject,
   publishProject,
   deleteProject,
-  recordVisit,
+  deleteProjectAndFiles,
+  resolveSlug,
+  checkSlug,
+  changeSlug,
 };

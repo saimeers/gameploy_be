@@ -1,5 +1,6 @@
 const searchService = require('../services/search.service');
 const { success } = require('../utils/response');
+const { withFileUrls } = require('../services/fileUrls');
 
 const search = async (req, res, next) => {
   try {
@@ -12,7 +13,7 @@ const search = async (req, res, next) => {
       limit: Number(limit) || 12,
     });
     success(res, {
-      data: result.projects,
+      data: await withFileUrls(result.projects),
       meta: { total: result.total, page: result.page, limit: result.limit },
     });
   } catch (err) { next(err); }

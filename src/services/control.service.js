@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client')
 const { NotFoundError, ForbiddenError } = require('../utils/errors')
+const { invalidatePublicData } = require('./cache.service')
 
 const prisma = new PrismaClient()
 
@@ -21,9 +22,11 @@ const createControl = async (projectId, userId, data) => {
   })
   const orden = (lastControl?.orden ?? -1) + 1
 
-  return prisma.controlJuego.create({
+  const control = await prisma.controlJuego.create({
     data: { ...data, id_proyecto: projectId, orden },
   })
+  await invalidatePublicData()
+  return control
 }
 
 const updateControl = async (controlId, userId, data) => {
@@ -34,7 +37,9 @@ const updateControl = async (controlId, userId, data) => {
   if (!control) throw new NotFoundError('Control not found')
   if (control.proyecto.id_usuario !== userId) throw new ForbiddenError('Not authorized')
 
-  return prisma.controlJuego.update({ where: { id: controlId }, data })
+  const updated = await prisma.controlJuego.update({ where: { id: controlId }, data })
+  await invalidatePublicData()
+  return updated
 }
 
 const deleteControl = async (controlId, userId) => {
@@ -46,6 +51,7 @@ const deleteControl = async (controlId, userId) => {
   if (control.proyecto.id_usuario !== userId) throw new ForbiddenError('Not authorized')
 
   await prisma.controlJuego.delete({ where: { id: controlId } })
+  await invalidatePublicData()
 }
 
 const reorderControls = async (projectId, userId, order) => {
@@ -58,6 +64,7 @@ const reorderControls = async (projectId, userId, order) => {
       prisma.controlJuego.update({ where: { id }, data: { orden } })
     )
   )
+  await invalidatePublicData()
 }
 
 module.exports = { getControls, createControl, updateControl, deleteControl, reorderControls }

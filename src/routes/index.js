@@ -2,11 +2,16 @@ const router = require('express').Router();
 const { PrismaClient } = require('@prisma/client')
 const prisma = new PrismaClient()
 
-const { getPresignedUrl } = require('../services/storage.service')
-const AdmZip = require('adm-zip')
+const fs = require('fs')
 const path = require('path')
-const https = require('https')
-const http = require('http')
+const play = require('../services/play.service')
+const { withFileUrls } = require('../services/fileUrls')
+const { getPublicFilesConfig } = require('../config/publicFiles')
+const cdnToken = require('../utils/cdnToken')
+const visitService = require('../services/visit.service')
+const projectService = require('../services/project.service')
+const cache = require('../services/cache.service')
+const { clientIp } = require('../utils/clientIp')
 
 const authRoutes = require('./auth.routes');
 const userRoutes = require('./user.routes');
@@ -30,8 +35,13 @@ router.use('/projects/:projectId/controls', controlRoutes)
 
 router.get('/public/games/:slug', async (req, res, next) => {
   try {
-    const project = await prisma.proyecto.findUnique({
-      where: { slug: req.params.slug },
+    // Cached for a minute (invalidated when a project changes); the
+    // visibility checks below run on every request. Old slugs still resolve:
+    // the frontend redirects to the current one.
+    const project = await cache.remember('games', `slug:${req.params.slug}`, 60, async () => {
+      const projectId = await projectService.resolveSlug(req.params.slug)
+      return projectId && prisma.proyecto.findUnique({
+      where: { id: projectId },
       include: {
         usuario:    { select: { nombre: true } },
         categoria:  true,
@@ -50,6 +60,7 @@ router.get('/public/games/:slug', async (req, res, next) => {
         },
         _count: { select: { visitas: true } },
       },
+      })
     })
 
     if (!project) {
@@ -65,7 +76,7 @@ router.get('/public/games/:slug', async (req, res, next) => {
     }
 
     if (project.visibilidad === 'privado') {
-      // Check if request has a valid token for the owner
+      // Only its owner (or an admin) may open a private project
       const authHeader = req.headers.authorization
       if (!authHeader?.startsWith('Bearer ')) {
         return res.status(403).json({
@@ -77,8 +88,11 @@ router.get('/public/games/:slug', async (req, res, next) => {
       try {
         const admin = require('../config/firebase')
         const decoded = await admin.auth().verifyIdToken(authHeader.split(' ')[1])
-        const dbUser = await prisma.usuario.findUnique({ where: { firebase_uid: decoded.uid } })
-        if (!dbUser || dbUser.id !== project.id_usuario) {
+        const dbUser = await prisma.usuario.findUnique({
+          where: { firebase_uid: decoded.uid },
+          include: { rol: true },
+        })
+        if (!dbUser || (dbUser.id !== project.id_usuario && dbUser.rol?.nombre !== 'admin')) {
           return res.status(403).json({
             success: false,
             message: 'This project is private',
@@ -94,28 +108,41 @@ router.get('/public/games/:slug', async (req, res, next) => {
       }
     }
 
-    const origen = req.headers.referer || req.headers.origin || null
-    await prisma.visita.create({
-      data: { id_proyecto: project.id, origen },
-    }).catch(() => {})
+    // Not awaited: locating and storing the visit must not delay the page
+    visitService.recordVisit(project.id, {
+      ip: clientIp(req),
+      origen: req.headers.referer || req.headers.origin || null,
+    })
 
-    res.json({ success: true, data: project })
+    res.json({ success: true, data: await withFileUrls(project) })
   } catch (err) { next(err) }
 })
 
-router.get('/public/files/url', async (req, res, next) => {
-    try {
-        const { key } = req.query
-        if (!key) return res.status(400).json({ success: false, message: 'key required' })
-        const url = await getPresignedUrl(key, 3600)
-        res.json({ success: true, data: { url } })
-    } catch (err) { next(err) }
+// Development CDN: with no R2 configured, published files live in a local
+// folder and are served here with the same signed links the CDN Worker checks.
+router.get(/^\/cdn(\/t\/.+)$/, async (req, res) => {
+    const cfg = getPublicFilesConfig()
+    if (cfg.driver !== 'local') return res.status(404).send('Not found')
+
+    const target = cdnToken.parsePath(req.params[0])
+    if (!target) return res.status(404).send('Not found')
+    if (!cdnToken.verify(cfg.signingSecret, target)) return res.status(403).send('Forbidden')
+
+    const file = path.join(cfg.localDir, target.key)
+    if (!file.startsWith(path.resolve(cfg.localDir) + path.sep) || !fs.existsSync(file)) {
+        return res.status(404).send('Not found')
+    }
+    res.setHeader('Content-Type', play.contentTypeFor(file))
+    res.setHeader('Cache-Control', target.key.endsWith('/index.html') ? 'public, max-age=300' : 'public, max-age=31536000, immutable')
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
+    res.sendFile(file)
 })
 
-// Serve WebGL game files from zip in bucket
+// Legacy: games uploaded before publishing existed, served from the zip in
+// the bucket. Same rules as the public game page: only the active version of
+// a published project that is not private. New builds are served by the CDN.
 router.get(/^\/play\/([^/]+)\/([^/]+)\/(.+)$/, async (req, res, next) => {
     try {
-
         const projectId = req.params[0]
         const versionId = req.params[1]
         const filename = req.params[2]
@@ -123,90 +150,50 @@ router.get(/^\/play\/([^/]+)\/([^/]+)\/(.+)$/, async (req, res, next) => {
         const archivo = await prisma.archivo.findFirst({
             where: {
                 id_version: versionId,
-                tipo: 'juego_webgl'
-            }
+                tipo: 'juego_webgl',
+                version: {
+                    id_proyecto: projectId,
+                    es_activa: true,
+                    proyecto: { estado: 'publicado', visibilidad: { not: 'privado' } },
+                },
+            },
+            select: { id: true, ruta_storage: true, fecha_subida: true },
         })
 
         if (!archivo) {
             return res.status(404).send('Game not found')
         }
 
-        const zipUrl = await getPresignedUrl(archivo.ruta_storage, 300)
-
-        const zipBuffer = await new Promise((resolve, reject) => {
-            const protocol = zipUrl.startsWith('https') ? https : http
-            const chunks = []
-
-            protocol.get(zipUrl, resp => {
-                resp.on('data', chunk => chunks.push(chunk))
-                resp.on('end', () => resolve(Buffer.concat(chunks)))
-                resp.on('error', reject)
-            }).on('error', reject)
-        })
-
-        const zip = new AdmZip(zipBuffer)
-
-        // Detect root folder automatically
-        const entries = zip.getEntries()
-
-        const indexEntry = entries.find(e =>
-            e.entryName.toLowerCase().endsWith('/index.html')
-        )
-
-        let rootFolder = ''
-
-        if (indexEntry) {
-            rootFolder = indexEntry.entryName.replace(/index\.html$/i, '')
-        }
-
-        // Build final path
-        let targetFile = filename
-
-        // If file is not already prefixed with root folder
-        if (rootFolder && !filename.startsWith(rootFolder)) {
-            targetFile = `${rootFolder}${filename}`
-        }
-
-        const cleanFilename = targetFile.replace(/^\/+/, '')
-
-        const entry =
-            zip.getEntry(cleanFilename) ||
-            zip.getEntry(decodeURIComponent(cleanFilename))
-
-        if (!entry) {
-            return res.status(404).send(`File not found in zip: ${cleanFilename}`)
-        }
-
-        const ext = path.extname(cleanFilename).toLowerCase()
-
-        const mimeTypes = {
-            '.html': 'text/html',
-            '.js': 'application/javascript',
-            '.mjs': 'application/javascript',
-            '.wasm': 'application/wasm',
-            '.data': 'application/octet-stream',
-            '.css': 'text/css',
-            '.json': 'application/json',
-            '.png': 'image/png',
-            '.jpg': 'image/jpeg',
-            '.jpeg': 'image/jpeg',
-            '.svg': 'image/svg+xml',
-            '.ico': 'image/x-icon',
-            '.txt': 'text/plain',
-            '.gz': 'application/gzip',
-            '.br': 'application/octet-stream',
-        }
-
-        const contentType =
-            mimeTypes[ext] ?? 'application/octet-stream'
-
-        res.setHeader('Content-Type', contentType)
-
-        // Unity WebGL
+        // Unity WebGL runs in an iframe of the frontend's origin
         res.setHeader('Access-Control-Allow-Origin', '*')
         res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
 
-        res.send(entry.getData())
+        // Each upload creates a new Archivo row, so its id identifies the
+        // content of every file in the build: browsers keep their copy and
+        // only revalidate, which answers 304 without touching the zip.
+        const etag = `"${archivo.id}-${play.SERVE_REVISION}"`
+        res.setHeader('ETag', etag)
+        res.setHeader('Cache-Control', 'public, no-cache')
+        res.setHeader('Last-Modified', new Date(archivo.fecha_subida).toUTCString())
+        const cached = (req.headers['if-none-match'] ?? '').split(',').map(t => t.trim())
+        if (cached.includes(etag)) {
+            return res.status(304).end()
+        }
+
+        const build = await play.loadBuild(archivo.ruta_storage)
+        const file = play.findFile(build, filename)
+
+        if (!file) {
+            return res.status(404).send(`File not found in zip: ${filename}`)
+        }
+
+        res.setHeader('Content-Type', play.contentTypeFor(file.name))
+
+        if (play.isEntryPage(build, file.name)) {
+            return res.send(play.injectProgressReporter(file.data.toString('utf8')))
+        }
+
+        res.send(file.data)
 
     } catch (err) {
         next(err)
@@ -242,7 +229,7 @@ router.get('/teacher/evaluations', verifyToken, requireRoles('docente', 'admin')
       .filter(c => { if (seen.has(c.id_proyecto)) return false; seen.add(c.id_proyecto); return true })
       .map(c => ({ ...c.proyecto, mi_comentario: c }))
 
-    res.json({ success: true, data: evaluations })
+    res.json({ success: true, data: await withFileUrls(evaluations) })
   } catch (err) { next(err) }
 })
 

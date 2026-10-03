@@ -2,11 +2,31 @@ const router = require('express').Router({ mergeParams: true });
 const multer = require('multer');
 const c = require('../controllers/version.controller');
 const { verifyToken, requireRegisteredUser } = require('../middlewares/auth.middleware');
+const { AppError } = require('../utils/errors');
+const { MAX_UPLOAD_MB, MAX_UPLOAD_BYTES, FORM_OVERHEAD_BYTES } = require('../config/uploads');
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 500 * 1024 * 1024 }, // 500 MB
+  limits: { fileSize: MAX_UPLOAD_BYTES },
+  // Browsers send file names as UTF-8: "Portada Ñandú.png" must not arrive as latin1.
+  defParamCharset: 'utf8',
 });
+
+const tooLarge = () => new AppError(`File too large: the maximum is ${MAX_UPLOAD_MB} MB`, 413);
+
+/** Reject an oversized upload from its Content-Length, before reading the body. */
+const limitUploadSize = (req, _res, next) => {
+  const length = Number(req.headers['content-length']);
+  if (length > MAX_UPLOAD_BYTES + FORM_OVERHEAD_BYTES) return next(tooLarge());
+  next();
+};
+
+/** multer.single, answering 413 instead of a 500 when the file is too large. */
+const uploadSingle = (field) => (req, res, next) =>
+  upload.single(field)(req, res, (err) => {
+    if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') return next(tooLarge());
+    next(err);
+  });
 
 /**
  * @swagger
@@ -75,6 +95,9 @@ router.post('/', verifyToken, requireRegisteredUser,c.create);
  *         name: versionId
  *         required: true
  *         schema: { type: string }
+ *     description: >
+ *       Maximum 95 MB per file. The API is behind Cloudflare, which rejects
+ *       requests over 100 MB.
  *     requestBody:
  *       content:
  *         multipart/form-data:
@@ -89,8 +112,9 @@ router.post('/', verifyToken, requireRegisteredUser,c.create);
  *                 enum: [juego_webgl, portada, captura]
  *     responses:
  *       201: { description: File uploaded }
+ *       413: { description: The file is larger than 95 MB }
  */
-router.post('/:versionId/files', verifyToken, requireRegisteredUser, upload.single('file'), c.uploadFile);
+router.post('/:versionId/files', verifyToken, requireRegisteredUser, limitUploadSize, uploadSingle('file'), c.uploadFile);
 
 /**
  * @swagger
@@ -142,5 +166,33 @@ router.patch('/:versionId/activate', verifyToken, requireRegisteredUser, c.setAc
  *       404: { description: File not found }
  */
 router.delete('/:versionId/files/:fileId', verifyToken, requireRegisteredUser, c.removeFile)
+
+/**
+ * @swagger
+ * /projects/{projectId}/versions/{versionId}/files/{fileId}/download:
+ *   get:
+ *     summary: Link to download the original upload of a file
+ *     description: Owner only. The link is valid for 5 minutes.
+ *     tags: [Versions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: versionId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: fileId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: "{ url }" }
+ *       403: { description: Not the owner }
+ */
+router.get('/:versionId/files/:fileId/download', verifyToken, requireRegisteredUser, c.download)
 
 module.exports = router;

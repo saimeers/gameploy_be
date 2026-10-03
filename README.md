@@ -4,7 +4,8 @@ API REST de **Gameploy**, el aplicativo web para el despliegue y la gestión de 
 Semillero VIRAL (Universidad Francisco de Paula Santander).
 
 Gestiona usuarios y roles, proyectos de Juegos Serios, sus versiones y archivos, la retroalimentación
-de los evaluadores y la ejecución en navegador de los builds Unity WebGL.
+de los evaluadores y la ejecución en navegador de los builds Unity WebGL, que se sirven desde
+Cloudflare con enlaces firmados según la visibilidad de cada proyecto.
 
 - Frontend: [`gameploy_fe`](https://github.com/saimeers/gameploy_fe)
 - Documentación interactiva: `/api/docs` (Swagger UI)
@@ -17,8 +18,11 @@ de los evaluadores y la ejecución en navegador de los builds Unity WebGL.
 | ORM | Prisma 6 |
 | Base de datos | PostgreSQL (Railway) |
 | Autenticación | Firebase Admin SDK (verificación de ID tokens) |
-| Almacenamiento | Railway Bucket, S3-compatible (`@aws-sdk/client-s3`) |
+| Almacenamiento | Railway Bucket, S3-compatible (`@aws-sdk/client-s3`): originales subidos |
+| CDN | Cloudflare R2 + Worker (`cdn-worker/`): juegos descomprimidos e imágenes |
+| Caché | Redis (`ioredis`), opcional: caché pública, límites de peticiones y visitas únicas |
 | Correo | Resend |
+| Geolocalización | `geoip-lite` (base GeoLite offline: la IP no sale del servidor) |
 | Documentación | Swagger / OpenAPI 3.0 (`swagger-jsdoc`) |
 | Seguridad | `helmet`, `cors`, `express-rate-limit` |
 
@@ -70,6 +74,19 @@ muestra la documentación.
 | `RESEND_FROM_EMAIL` | Remitente de los correos (dominio verificado) |
 | `ADMIN_EMAIL` | Destinatario de los avisos de registros pendientes |
 | `APP_NAME` | Nombre mostrado en los correos (por defecto `Gameploy`) |
+| `PLAY_CACHE_MB` | Memoria máxima para la caché de builds antiguos servidos por `/play` (por defecto `256`) |
+| `API_PUBLIC_URL` | URL pública de la API con `/api/v1`; en desarrollo, base del CDN local |
+| `RATE_LIMIT_MAX` | Peticiones por IP cada 15 minutos (por defecto `1000`; el login, 20) |
+| `R2_ACCOUNT_ID` | Cuenta de Cloudflare donde está el bucket R2 |
+| `R2_ACCESS_KEY_ID` | Token de R2 con permiso *Object Read & Write* sobre el bucket |
+| `R2_SECRET_ACCESS_KEY` | Ídem |
+| `R2_BUCKET` | Bucket R2 (`gameploy-files`). Sin él no se publica en R2 |
+| `CDN_URL` | Dominio del Worker (`https://cdn-gameploy.saimers.dev`) |
+| `CDN_SIGNING_SECRET` | Secreto de los enlaces firmados; el mismo que tiene el Worker |
+| `CDN_TOKEN_TTL_MIN` | Duración de los enlaces: valen entre 1 y 2 veces este valor (por defecto `60`) |
+| `PUBLIC_FILES_DIR` | Carpeta del CDN local de desarrollo (por defecto `./.public-files`) |
+| `REDIS_URL` | Redis; opcional, sin él todo funciona en memoria |
+| `VISIT_SALT` | Secreto del hash del visitante para contar visitas únicas |
 
 Nunca subir el archivo `.env`: está en `.gitignore`. Al añadir una variable nueva, reflejarla también
 en `.env.example` y en esta tabla.
@@ -84,7 +101,8 @@ en `.env.example` y en esta tabla.
 | `npm run db:generate` | Regenera el cliente de Prisma |
 | `npm run db:studio` | Abre Prisma Studio |
 | `npm run db:seed` | Puebla roles y categorías iniciales |
-| `npm test` | Ejecuta la batería de pruebas (Jest) |
+| `npm test` | Ejecuta la batería de pruebas (Jest) y las del Worker (`node --test`) |
+| `npm run publish:existing` | Publica en el CDN los archivos subidos antes de que existiera (`-- --dry-run` solo los lista) |
 | `npm run test:watch` | Pruebas en modo vigilancia |
 | `npm run test:coverage` | Pruebas con informe de cobertura |
 
@@ -98,9 +116,13 @@ corre sin infraestructura y sin credenciales.
 tests/
 ├── app.test.js        Health check, 404 y exigencia de token en los endpoints protegidos
 ├── middlewares/       Control de acceso por roles
-├── services/          Herencia de archivos entre versiones y borrado con conteo de referencias
-├── utils/             Generación de slugs y formato de las respuestas
+├── routes/            Ficha pública por visibilidad, /play, CDN local y subidas
+├── services/          Versiones y archivos, publicación en el CDN, enlaces firmados, caché y visitas
+├── utils/             Tokens del CDN, contador de peticiones en Redis, slugs y respuestas
+├── helpers/           Redis simulado en memoria
 └── setup.js           Variables de entorno mínimas para cargar los módulos
+
+cdn-worker/test/       El Worker: firma, vencimiento, prefijos, caché y compatibilidad con la API
 ```
 
 `nanoid` se publica solo como ESM y el proyecto es CommonJS, así que Jest lo resuelve
@@ -185,19 +207,23 @@ a Prisma.
 | `/users` | `GET /me`, `PATCH /me`, `GET /check?email=` | Autenticado |
 | `/users` | `GET /`, `PATCH /:id/role`, `PATCH /:id/status` | admin |
 | `/projects` | `POST /`, `GET /mine`, `PATCH /:id`, `DELETE /:id`, `PATCH /:id/publish` | Propietario (estudiante) o admin |
-| `/projects/:projectId/versions` | `GET /`, `POST /`, `POST /:versionId/files`, `PATCH /:versionId/activate`, `DELETE /:versionId/files/:fileId` | Propietario |
+| `/projects` | `GET /mine/visits`, `GET /:id/visits`, `GET /:id/slug?slug=`, `PATCH /:id/slug` | Propietario o admin |
+| `/projects/:projectId/versions` | `GET /` | Propietario o admin |
+| `/projects/:projectId/versions` | `POST /`, `POST /:versionId/files`, `PATCH /:versionId/activate`, `DELETE /:versionId/files/:fileId`, `GET /:versionId/files/:fileId/download` | Propietario |
 | `/projects/:projectId/controls` | `GET /`, `POST /`, `PATCH /reorder`, `PATCH /:controlId`, `DELETE /:controlId` | Lectura pública, escritura del propietario |
 | `/projects/:projectId/comments` | `GET /` | Público |
 | `/projects/:projectId/comments` | `POST /` | docente, admin |
 | `/search` | `GET /?q&categoria&etiquetas&page&limit`, `GET /categorias`, `GET /etiquetas` | Público |
-| `/admin` | `GET /stats`, `GET /projects`, `PATCH /projects/:id/featured`, `DELETE /projects/:id`, `PATCH /comments/:id/moderate`, `PATCH /users/:id/approve`, CRUD de `/categorias` y `/etiquetas` | admin |
-| Público | `GET /public/games/:slug`, `GET /public/files/url?key=`, `GET /play/:projectId/:versionId/*` | Público |
+| `/admin` | `GET /stats`, `GET /stats/visits`, `GET /projects`, `PATCH /projects/:id/featured`, `DELETE /projects/:id`, `GET /files/:id/contents`, `GET /files/:id/download`, `PATCH /comments/:id/moderate`, `PATCH /users/:id/approve`, CRUD y `PATCH /:id/status` de `/categorias` y `/etiquetas` | admin |
+| Público | `GET /public/games/:slug` | Según la visibilidad del proyecto |
+| Público | `GET /play/:projectId/:versionId/*` | Respaldo para builds antiguos: versión activa de un proyecto publicado y no privado |
+| Desarrollo | `GET /cdn/t/<exp>.<firma>/*` | Enlace firmado; solo sin R2 y fuera de producción |
 | Docente | `GET /teacher/evaluations` | docente, admin |
 
 ## Modelo de datos
 
 `Rol` → `Usuario` → `Proyecto` → { `VersionProyecto` → `Archivo`, `ControlJuego`, `Comentario`,
-`Visita`, `ProyectoEtiqueta` → `Etiqueta` }, y `Proyecto` → `Categoria`.
+`Visita`, `SlugAnterior`, `ProyectoEtiqueta` → `Etiqueta` }, y `Proyecto` → `Categoria`.
 
 Enumeraciones (sus valores viajan tal cual en la API):
 
@@ -211,8 +237,25 @@ Enumeraciones (sus valores viajan tal cual en la API):
 
 Reglas relevantes:
 
-- El `slug` se genera al crear el proyecto y no cambia al renombrarlo, de modo que los enlaces
-  compartidos siguen siendo válidos.
+- El `slug` se genera al crear el proyecto y no cambia al renombrarlo. El dueño puede elegir otro
+  con `PATCH /projects/:id/slug`; el anterior se guarda en `slugs_anteriores`, así que los enlaces ya
+  compartidos siguen funcionando (`/public/games/:slug` resuelve slugs anteriores y devuelve el
+  proyecto con su slug actual para que el frontend redirija) y ningún otro proyecto puede tomarlo.
+- `PATCH /projects/:id` solo acepta los campos editables (`nombre`, `descripcion`,
+  `instrucciones`, `visibilidad`, `id_categoria`, `etiquetas`); el resto tiene su propio endpoint.
+- Las categorías y etiquetas se **desactivan** (`activo: false`) en vez de borrarse: dejan de
+  ofrecerse en los formularios y filtros, pero los proyectos que las usan las conservan. Solo se
+  pueden eliminar si ningún proyecto las usa (si no, 409). Un proyecto no puede recibir una
+  categoría o etiqueta inactiva nueva.
+- Cada visita guarda `codigo_pais`, `region` y `ciudad`, calculados con `geoip-lite` a partir de la
+  IP del visitante, que no se guarda. La base (~110 MB de memoria) se carga con la primera visita.
+  Se cuenta una visita por visitante y proyecto cada 30 minutos: la clave es un HMAC de la IP con
+  `VISIT_SALT` que solo vive en Redis (o en memoria) durante ese tiempo.
+- `GET /public/games/:slug`, la búsqueda (60 s), las categorías y etiquetas (5 min) y las estadísticas
+  de visitas (5 min) se guardan en caché. Toda escritura que se ve en esas páginas la invalida
+  (`invalidatePublicData()` y `bump()` en `services/cache.service.js`), así que pasar un proyecto a
+  privado surte efecto al instante. Los enlaces firmados se añaden después de la caché.
+- Borrar un proyecto borra también sus objetos del bucket, salvo los que otra fila aún referencia.
 - Solo una versión por proyecto puede estar activa; crear o activar una desactiva las demás.
 - Subir una `portada` o un `juego_webgl` reemplaza el archivo anterior del mismo tipo en esa versión;
   las `captura` se acumulan.
@@ -233,25 +276,94 @@ invoca en cada inicio de sesión para crear o recuperar el registro local a part
 
 ## Archivos y ejecución de los juegos
 
-Los builds se suben a `POST /projects/:id/versions/:versionId/files` con `fileType=juego_webgl`
-(multipart, hasta 500 MB) y se guardan en el bucket bajo
-`projects/<projectId>/versions/<versionId>/<archivo>`. El acceso a los archivos privados se hace con
-URLs prefirmadas (`GET /public/files/url?key=`).
+Los archivos se suben a `POST /projects/:id/versions/:versionId/files` (multipart, **hasta 95 MB**;
+si no, 413). La API está detrás del proxy de Cloudflare, que en el plan gratis rechaza peticiones de
+más de 100 MB; el margen cubre el resto del formulario. El límite está en `src/config/uploads.js` y
+el frontend comprueba el mismo valor antes de subir. Al reemplazar la portada o el juego de una
+versión, el anterior se quita solo cuando el nuevo ya está guardado.
+El original queda en el bucket de Railway (`projects/<projectId>/versions/<versionId>/...`) como
+respaldo y para descargarlo; lo que descargan los jugadores se **publica** aparte
+(`services/publish.service.js`):
 
-Para la ejecución en navegador, `GET /play/:projectId/:versionId/*` descarga el `.zip` de la versión,
-lo abre en memoria, detecta la carpeta raíz y devuelve el archivo solicitado con su tipo MIME y
-cabeceras CORS abiertas, de forma que el frontend pueda incrustarlo en un `<iframe>`. Por ese motivo
-`helmet` corre con CSP, frameguard, COEP y COOP desactivados.
+- El `.zip` del juego se descomprime en `builds/<uuid>/` y su lista de archivos se guarda en
+  `Archivo.manifiesto` (`GET /admin/files/:id/contents` la lee sin abrir el `.zip`). Al `index.html`
+  se le inyecta un script que avisa a la página contenedora, con `postMessage`, del progreso de
+  carga (`boot`, `progress`, `ready`, `error`).
+- Las imágenes van a `media/<uuid>/<nombre>`.
+- Cada subida tiene su propia ruta, así que los archivos se marcan inmutables (un año en caché) y el
+  `index.html`, 5 minutos. Si publicar falla, se deshace la subida.
+- Al borrar un archivo o un proyecto se borran el original y lo publicado, salvo que otra fila (una
+  versión que lo heredó) aún lo use.
 
-> El zip se descomprime en cada petición y no hay caché: es el punto más costoso del sistema y el
-> primer candidato a optimizar.
+En producción lo publicado vive en **Cloudflare R2**, en un bucket privado que sirve el Worker de
+`cdn-worker/` (ver su README). En desarrollo, sin `R2_BUCKET`, se publica en `PUBLIC_FILES_DIR` y lo
+sirve la propia API en `/api/v1/cdn` con las mismas reglas, así que no hace falta Cloudflare.
+
+### Quién puede ver cada juego
+
+| Proyecto | Ficha, juego e imágenes |
+| :--- | :--- |
+| `publico` y publicado | Cualquiera |
+| `por_enlace` y publicado | Quien tenga el enlace `/games/<slug>` (no aparece en la búsqueda) |
+| `privado` | El dueño y el admin |
+| Borrador y versiones no activas | El dueño y el admin ("Probar") |
+| `.zip` original | El dueño (`GET .../files/:fileId/download`) y el admin (`GET /admin/files/:id/download`), con un enlace de 5 minutos |
+
+Los archivos publicados se piden con **enlaces firmados**:
+`<CDN_URL>/t/<vencimiento>.<firma>/builds/<uuid>/index.html`, con la firma = HMAC-SHA256 de
+`<prefijo>|<vencimiento>` con `CDN_SIGNING_SECRET` (`utils/cdnToken.js`). El token va en la ruta, así
+que las rutas relativas del juego (`Build/...`, `TemplateData/...`) lo heredan, y solo abre los
+archivos de ese prefijo.
+
+- La API firma localmente y **solo en respuestas que el usuario ya tiene derecho a ver**
+  (`services/fileUrls.js`): añade `play_url` al build y `url` a cada imagen, y quita las rutas
+  internas. No hay ningún endpoint que firme lo que le pidan.
+- Los enlaces vencen en franjas: todos los que entran en la misma hora reciben la misma URL (la caché
+  del navegador funciona) y vale entre 1 y 2 horas (`CDN_TOKEN_TTL_MIN`). Quien ya tenía un enlace
+  lo conserva hasta que vence: es lo que tarda en surtir efecto pasar un proyecto a privado o
+  reemplazar un build.
+- El Worker comprueba la firma antes de nada y guarda en la caché de Cloudflare con la clave del
+  objeto, sin el token: todos los jugadores comparten la misma copia en el borde.
+
+`GET /play/:projectId/:versionId/*` (`services/play.service.js`) queda como respaldo para los builds
+subidos antes del CDN, con las reglas de la ficha pública (solo la versión activa de un proyecto
+publicado y no privado). Abre el `.zip` en memoria, con una caché LRU limitada por `PLAY_CACHE_MB`.
+`npm run publish:existing` publica esos archivos antiguos; cuando ya no quede ninguno, `/play` se
+puede retirar.
+
+Los builds comprimidos (Gzip/Brotli) no se pueden servir, porque los archivos van sin
+`Content-Encoding`; el formulario de subida los rechaza. `helmet` corre con CSP, frameguard, COEP y
+COOP desactivados porque el juego se incrusta en un `<iframe>` de otro origen.
+
+### Caché y límites de peticiones
+
+Con `REDIS_URL`, Redis guarda la caché pública, los contadores del límite de peticiones (sobreviven a
+los despliegues) y las visitas únicas. Sin Redis, o si se cae, todo sigue funcionando: la caché y las
+visitas pasan a memoria y el límite deja pasar las peticiones en lugar de bloquear la API. El límite
+global es `RATE_LIMIT_MAX` peticiones por IP cada 15 minutos (un salón comparte IP; la ficha de un
+juego cuesta una sola petición) y el de login, 20.
+
+La API está detrás del proxy de Cloudflare, así que la IP que ve Express es la de un servidor de
+Cloudflare compartido por muchos visitantes. `utils/clientIp.js` toma la del visitante de
+`CF-Connecting-IP`, pero solo si la conexión llega desde un rango de Cloudflare (así nadie puede
+falsificarla llamando al origen directamente). La usan el límite de peticiones y las visitas.
 
 ## Despliegue
 
-La API, la base de datos y el bucket viven en Railway; `npm start` es el comando de arranque. La
-instancia de producción se publica en `https://api-gameploy.saimers.dev/api/v1`. Configurar las
-mismas variables de entorno del apartado anterior y `FRONTEND_URL` con el dominio real del frontend,
-ya que define el origen aceptado por CORS.
+La API, la base de datos, Redis y el bucket de originales viven en Railway; `npm start` es el comando
+de arranque. La instancia de producción se publica en `https://api-gameploy.saimers.dev/api/v1`.
+Configurar las variables de entorno del apartado anterior y `FRONTEND_URL` con el dominio real del
+frontend, ya que define el origen aceptado por CORS.
+
+Orden para activar el CDN en un entorno:
+
+1. Crear el bucket R2 privado y desplegar el Worker (`cdn-worker/README.md`).
+2. En Railway, añadir Redis y las variables `R2_*`, `CDN_URL`, `CDN_SIGNING_SECRET` (el mismo del
+   Worker), `REDIS_URL` y `VISIT_SALT`.
+3. Desplegar la API y aplicar las migraciones con `npx prisma migrate deploy`.
+4. Publicar lo ya subido con `npm run publish:existing` (primero con `-- --dry-run`). Es seguro
+   repetirlo: solo toma lo pendiente.
+5. Desplegar el frontend.
 
 ## Contribución
 

@@ -1,8 +1,14 @@
 const { PrismaClient } = require('@prisma/client');
 
+const catalog = require('./catalog.service');
+const cache = require('./cache.service');
+
 const prisma = new PrismaClient();
 
-const searchProjects = async ({ q, categoria, etiquetas = [], page = 1, limit = 12 } = {}) => {
+const searchProjects = (params = {}) =>
+  cache.remember('search', JSON.stringify(params), 60, () => findProjects(params));
+
+const findProjects = async ({ q, categoria, etiquetas = [], page = 1, limit = 12 } = {}) => {
   const skip = (page - 1) * limit
   const where = {
     estado: 'publicado',
@@ -39,8 +45,9 @@ const searchProjects = async ({ q, categoria, etiquetas = [], page = 1, limit = 
   return { projects, total, page, limit }
 }
 
-const getCategorias = async () => prisma.categoria.findMany({ orderBy: { nombre: 'asc' } });
+// Only active ones: these feed the catalog filters and the project forms
+const getCategorias = () => cache.remember('catalog', 'categorias', 300, () => catalog.listActive('categoria'));
 
-const getEtiquetas = async () => prisma.etiqueta.findMany({ orderBy: { nombre: 'asc' } });
+const getEtiquetas = () => cache.remember('catalog', 'etiquetas', 300, () => catalog.listActive('etiqueta'));
 
 module.exports = { searchProjects, getCategorias, getEtiquetas };

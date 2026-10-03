@@ -1,6 +1,10 @@
 const { PrismaClient } = require('@prisma/client');
 const { NotFoundError, ConflictError, ValidationError } = require('../utils/errors');
 const { removeArchivo } = require('./archivo.service');
+const { deleteProjectAndFiles } = require('./project.service');
+const { loadBuild, describeBuild } = require('./play.service');
+const { getPresignedUrl } = require('./storage.service');
+const { invalidatePublicData } = require('./cache.service');
 
 const prisma = new PrismaClient();
 
@@ -78,11 +82,36 @@ const getProjectById = async (projectId) => {
 };
 
 const toggleFeatured = async (projectId, destacado) => {
-  return prisma.proyecto.update({ where: { id: projectId }, data: { destacado } });
+  const project = await prisma.proyecto.update({ where: { id: projectId }, data: { destacado } });
+  await invalidatePublicData();
+  return project;
 };
 
 const adminDeleteProject = async (projectId) => {
-  return prisma.proyecto.delete({ where: { id: projectId } });
+  const project = await prisma.proyecto.findUnique({ where: { id: projectId }, select: { id: true } });
+  if (!project) throw new NotFoundError('Project not found');
+  await deleteProjectAndFiles(projectId);
+};
+
+/**
+ * What a game build contains: every file with its size, plus the checks the
+ * upload form runs (compressed build, PWA template), for the admin to review.
+ */
+const getBuildContents = async (fileId) => {
+  const archivo = await prisma.archivo.findUnique({ where: { id: fileId } });
+  if (!archivo) throw new NotFoundError('File not found');
+  if (archivo.tipo !== 'juego_webgl') throw new ValidationError('Only game builds have contents');
+
+  // Published builds keep their manifest; older ones are read from the zip.
+  if (archivo.manifiesto) return archivo.manifiesto;
+  return describeBuild(await loadBuild(archivo.ruta_storage));
+};
+
+/** Short-lived link to download the original upload of any file. */
+const getDownloadUrl = async (fileId) => {
+  const archivo = await prisma.archivo.findUnique({ where: { id: fileId } });
+  if (!archivo) throw new NotFoundError('File not found');
+  return { url: await getPresignedUrl(archivo.ruta_storage, 300, archivo.nombre_archivo) };
 };
 
 /**
@@ -93,7 +122,8 @@ const adminDeleteFile = async (fileId) => {
   const archivo = await prisma.archivo.findUnique({ where: { id: fileId } });
   if (!archivo) throw new NotFoundError('File not found');
 
-  return removeArchivo(archivo);
+  await removeArchivo(archivo);
+  await invalidatePublicData();
 };
 
 const approveUser = async (userId) => {
@@ -129,6 +159,8 @@ module.exports = {
   getProjectById,
   toggleFeatured,
   adminDeleteProject,
+  getBuildContents,
+  getDownloadUrl,
   adminDeleteFile,
   approveUser,
 };

@@ -1,5 +1,8 @@
 const projectService = require('../services/project.service');
+const visitService = require('../services/visit.service');
+const { withFileUrls } = require('../services/fileUrls');
 const { success } = require('../utils/response');
+const { clientIp } = require('../utils/clientIp');
 
 const create = async (req, res, next) => {
   try {
@@ -11,8 +14,8 @@ const create = async (req, res, next) => {
 const getBySlug = async (req, res, next) => {
   try {
     const project = await projectService.getProjectBySlug(req.params.slug, req.user);
-    await projectService.recordVisit(project.id, req.headers.referer || null);
-    success(res, { data: project });
+    visitService.recordVisit(project.id, { ip: clientIp(req), origen: req.headers.referer || null });
+    success(res, { data: await withFileUrls(project) });
   } catch (err) { next(err); }
 };
 
@@ -23,7 +26,7 @@ const getMine = async (req, res, next) => {
       page: Number(page) || 1,
       limit: Number(limit) || 12,
     });
-    success(res, { data: result.projects, meta: { total: result.total, page: result.page, limit: result.limit } });
+    success(res, { data: await withFileUrls(result.projects), meta: { total: result.total, page: result.page, limit: result.limit } });
   } catch (err) { next(err); }
 };
 
@@ -48,4 +51,39 @@ const remove = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { create, getBySlug, getMine, update, publish, remove };
+const getMyVisits = async (req, res, next) => {
+  try {
+    const stats = await visitService.getVisitStats({
+      ownerId: req.user.dbUser.id,
+      days: visitService.parseDays(req.query.days),
+    });
+    success(res, { data: stats });
+  } catch (err) { next(err); }
+};
+
+const getVisits = async (req, res, next) => {
+  try {
+    const stats = await visitService.getProjectVisitStats(
+      req.params.id, req.user, visitService.parseDays(req.query.days),
+    );
+    success(res, { data: stats });
+  } catch (err) { next(err); }
+};
+
+const checkSlug = async (req, res, next) => {
+  try {
+    const result = await projectService.checkSlug(req.params.id, req.query.slug, req.user);
+    success(res, { data: result });
+  } catch (err) { next(err); }
+};
+
+const changeSlug = async (req, res, next) => {
+  try {
+    const project = await projectService.changeSlug(req.params.id, req.body.slug, req.user);
+    success(res, { data: project, message: 'Slug updated' });
+  } catch (err) { next(err); }
+};
+
+module.exports = {
+  create, getBySlug, getMine, update, publish, remove, getMyVisits, getVisits, checkSlug, changeSlug,
+};

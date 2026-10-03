@@ -51,6 +51,28 @@ router.get('/mine', verifyToken, requireRegisteredUser, c.getMine);
 
 /**
  * @swagger
+ * /projects/mine/visits:
+ *   get:
+ *     summary: Where the visits to my projects come from
+ *     description: >
+ *       Visits grouped by country (ISO 3166-1 alpha-2 code, null when unknown)
+ *       and the ten most visited cities. The location is resolved from the
+ *       visitor's IP when the visit is recorded; the IP is not stored.
+ *     tags: [Projects]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: days
+ *         description: Only the last N days (1-365). All time when omitted.
+ *         schema: { type: integer }
+ *     responses:
+ *       200: { description: "{ total, days, countries: [{ codigo_pais, visitas }], cities: [{ codigo_pais, region, ciudad, visitas }] }" }
+ */
+router.get('/mine/visits', verifyToken, requireRegisteredUser, c.getMyVisits);
+
+/**
+ * @swagger
  * /projects/{slug}:
  *   get:
  *     summary: Get a project by its slug (public)
@@ -115,5 +137,82 @@ router.delete('/:id', verifyToken, requireRegisteredUser, c.remove);
  *       200: { description: Project published }
  */
 router.patch('/:id/publish', verifyToken, requireRegisteredUser, c.publish);
+
+/**
+ * @swagger
+ * /projects/{id}/visits:
+ *   get:
+ *     summary: Where the visits to one project come from
+ *     description: Same shape as /projects/mine/visits. Owner or admin only.
+ *     tags: [Projects]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: days
+ *         schema: { type: integer }
+ *     responses:
+ *       200: { description: Visit stats }
+ *       403: { description: Not the owner }
+ *       404: { description: Not found }
+ */
+router.get('/:id/visits', verifyToken, requireRegisteredUser, c.getVisits);
+
+/**
+ * @swagger
+ * /projects/{id}/slug:
+ *   get:
+ *     summary: Check whether a project can use a slug
+ *     description: >
+ *       The input is normalised first ("Mi Juego" → "mi-juego"). A slug is
+ *       available when no other project uses it now or used it before. Owner
+ *       or admin only.
+ *     tags: [Projects]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: slug
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: "{ slug, valid, available, reason }" }
+ *   patch:
+ *     summary: Change the slug of a project
+ *     description: >
+ *       The previous slug keeps working: /public/games/{previous} returns the
+ *       project, whose `slug` field holds the current one.
+ *     tags: [Projects]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [slug]
+ *             properties:
+ *               slug: { type: string }
+ *     responses:
+ *       200: { description: Updated project }
+ *       422: { description: Invalid slug }
+ *       409: { description: Slug already in use }
+ */
+router.get('/:id/slug', verifyToken, requireRegisteredUser, c.checkSlug);
+router.patch('/:id/slug', verifyToken, requireRegisteredUser, c.changeSlug);
 
 module.exports = router;

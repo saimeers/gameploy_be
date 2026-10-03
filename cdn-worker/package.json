@@ -1,0 +1,11 @@
+{
+  "name": "gameploy-cdn",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker que sirve los juegos y las imágenes de Gameploy desde R2 con enlaces firmados",
+  "scripts": {
+    "test": "node --test",
+    "dev": "npx wrangler dev",
+    "deploy": "npx wrangler deploy"
+  }
+}

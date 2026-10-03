@@ -4,3 +4,8 @@ node_modules/
 dist/
 *.log
 .DS_Store
+.public-files/
+
+# cdn-worker (wrangler)
+cdn-worker/.wrangler/
+cdn-worker/node_modules/

@@ -6,6 +6,9 @@ jest.mock('@prisma/client', () => ({ PrismaClient: jest.fn(() => mockPrisma) }))
 jest.mock('../../src/services/storage.service', () => ({
   deleteFile: jest.fn(() => Promise.resolve()),
 }))
+jest.mock('../../src/services/publish.service', () => ({
+  removePublished: jest.fn(() => Promise.resolve()),
+}))
 
 const { deleteFile } = require('../../src/services/storage.service')
 const { removeArchivo } = require('../../src/services/archivo.service')
@@ -36,5 +39,16 @@ describe('removeArchivo', () => {
 
     expect(mockPrisma.archivo.delete).toHaveBeenCalled()
     expect(deleteFile).not.toHaveBeenCalled()
+  })
+})
+
+describe('removeArchivo con copia publicada', () => {
+  it('borra también la copia publicada cuando ya nadie usa el archivo', async () => {
+    const { removePublished } = require('../../src/services/publish.service')
+    mockPrisma.archivo.count.mockResolvedValue(0)
+
+    await removeArchivo({ ...archivo, ruta_publica: 'builds/abc/' })
+
+    expect(removePublished).toHaveBeenCalledWith('builds/abc/')
   })
 })

@@ -64,10 +64,13 @@ model Usuario {
   @@map("usuarios")
 }
 
+/// Categories and tags are deactivated rather than deleted: an inactive one is
+/// no longer offered for new projects, but the projects that use it keep it.
 model Categoria {
   id          Int        @id @default(autoincrement())
   nombre      String     @unique
   descripcion String?
+  activo      Boolean    @default(true)
   proyectos   Proyecto[]
 
   @@map("categorias")
@@ -76,6 +79,7 @@ model Categoria {
 model Etiqueta {
   id        Int                @id @default(autoincrement())
   nombre    String             @unique
+  activo    Boolean            @default(true)
   proyectos ProyectoEtiqueta[]
 
   @@map("etiquetas")
@@ -101,8 +105,21 @@ model Proyecto {
   controles         ControlJuego[]
   comentarios       Comentario[]
   visitas           Visita[]
+  slugs_anteriores  SlugAnterior[]
 
   @@map("proyectos")
+}
+
+/// Slugs a project had before its owner changed it. They keep the links that
+/// were already shared working, and no other project can take them.
+model SlugAnterior {
+  slug         String   @id
+  fecha_cambio DateTime @default(now())
+  id_proyecto  String
+  proyecto     Proyecto @relation(fields: [id_proyecto], references: [id], onDelete: Cascade)
+
+  @@index([id_proyecto])
+  @@map("slugs_anteriores")
 }
 
 model ProyectoEtiqueta {
@@ -133,6 +150,12 @@ model Archivo {
   tipo           FileType
   nombre_archivo String
   ruta_storage   String
+  /// Published copy that players download (R2 or the local dev folder):
+  /// builds/<id>/ for a game, media/<id>/<name> for an image. Null when not
+  /// published yet. Inherited rows share it, like ruta_storage.
+  ruta_publica   String?
+  /// Files of a published game build with their sizes and upload checks.
+  manifiesto     Json?
   tamanio_bytes  BigInt
   fecha_subida   DateTime        @default(now())
   id_version     String
@@ -171,8 +194,14 @@ model Visita {
   id          String   @id @default(uuid())
   fecha       DateTime @default(now())
   origen      String?
+  /// Location resolved from the visitor's IP when the visit is recorded. The
+  /// IP itself is never stored.
+  codigo_pais String?  @db.Char(2)
+  region      String?
+  ciudad      String?
   id_proyecto String
   proyecto    Proyecto @relation(fields: [id_proyecto], references: [id], onDelete: Cascade)
 
+  @@index([id_proyecto, fecha])
   @@map("visitas")
 }

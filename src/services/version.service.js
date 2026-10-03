@@ -1,7 +1,9 @@
 const { PrismaClient } = require('@prisma/client');
 const { NotFoundError, ForbiddenError } = require('../utils/errors');
-const { uploadFile, buildStorageKey } = require('./storage.service');
+const { uploadFile, deleteFile, getPresignedUrl, buildStorageKey } = require('./storage.service');
+const { isPublishingEnabled, publishArchivo } = require('./publish.service');
 const { removeArchivo } = require('./archivo.service');
+const { invalidatePublicData } = require('./cache.service');
 
 const prisma = new PrismaClient();
 
@@ -37,7 +39,7 @@ const createVersion = async (projectId, userId, { numero_version, notas_version,
     data: { es_activa: false },
   });
 
-  return prisma.versionProyecto.create({
+  const version = await prisma.versionProyecto.create({
     data: {
       id_proyecto: projectId,
       numero_version,
@@ -49,11 +51,15 @@ const createVersion = async (projectId, userId, { numero_version, notas_version,
           nombre_archivo: archivo.nombre_archivo,
           ruta_storage:   archivo.ruta_storage,
           tamanio_bytes:  archivo.tamanio_bytes,
+          ruta_publica:   archivo.ruta_publica,
+          manifiesto:     archivo.manifiesto ?? undefined,
         })),
       },
     },
     include: { archivos: true },
   });
+  await invalidatePublicData();
+  return version;
 };
 
 const uploadVersionFile = async (versionId, userId, file, fileType) => {
@@ -87,7 +93,7 @@ const uploadVersionFile = async (versionId, userId, file, fileType) => {
     mimetype: file.mimetype,
   });
 
-  return prisma.archivo.create({
+  const archivo = await prisma.archivo.create({
     data: {
       id_version: versionId,
       tipo: fileType,
@@ -96,6 +102,8 @@ const uploadVersionFile = async (versionId, userId, file, fileType) => {
       tamanio_bytes: file.size,
     },
   });
+  await invalidatePublicData();
+  return archivo;
 };
 
 const setActiveVersion = async (versionId, userId) => {
@@ -111,14 +119,27 @@ const setActiveVersion = async (versionId, userId) => {
     data: { es_activa: false },
   });
 
-  return prisma.versionProyecto.update({
+  const active = await prisma.versionProyecto.update({
     where: { id: versionId },
     data: { es_activa: true },
     include: { archivos: true },
   });
+  await invalidatePublicData();
+  return active;
 };
 
-const getVersions = async (projectId) => {
+/** Owner or admin; anyone else gets 403, since versions carry the game files. */
+const assertCanManage = (project, requestingUser) => {
+  const isOwner = project.id_usuario === requestingUser.dbUser.id;
+  const isAdmin = requestingUser.dbUser.rol.nombre === 'admin';
+  if (!isOwner && !isAdmin) throw new ForbiddenError('Not authorized');
+};
+
+const getVersions = async (projectId, requestingUser) => {
+  const project = await prisma.proyecto.findUnique({ where: { id: projectId } });
+  if (!project) throw new NotFoundError('Project not found');
+  assertCanManage(project, requestingUser);
+
   return prisma.versionProyecto.findMany({
     where: { id_proyecto: projectId },
     include: { archivos: true },
@@ -134,26 +155,56 @@ const replaceOrAddFile = async (versionId, userId, file, fileType) => {
   if (!version) throw new NotFoundError('Version not found')
   if (version.proyecto.id_usuario !== userId) throw new ForbiddenError('Not authorized')
 
-  // For portada and juego_webgl: replace existing
-  if (fileType === 'portada' || fileType === 'juego_webgl') {
-    const existing = version.archivos.filter(a => a.tipo === fileType)
-    for (const old of existing) {
-      await removeArchivo(old)
-    }
-  }
-
   const key = buildStorageKey(version.id_proyecto, versionId, `${Date.now()}_${file.originalname}`)
   await uploadFile({ buffer: file.buffer, key, mimetype: file.mimetype })
 
-  return prisma.archivo.create({
+  // The copy players download. If publishing fails, the upload is undone so
+  // no row ever points at a half-published file.
+  let published = {}
+  if (isPublishingEnabled()) {
+    try {
+      published = await publishArchivo({ tipo: fileType, nombre_archivo: file.originalname }, file.buffer, file.mimetype)
+    } catch (err) {
+      await deleteFile(key).catch(() => {})
+      throw err
+    }
+  }
+
+  const archivo = await prisma.archivo.create({
     data: {
       id_version: versionId,
       tipo: fileType,
       nombre_archivo: file.originalname,
       ruta_storage: key,
       tamanio_bytes: file.size,
+      ...published,
     },
   })
+
+  // A version has one cover and one build: the previous one goes only now
+  // that the new one is saved, so a failed upload never leaves it without.
+  if (fileType === 'portada' || fileType === 'juego_webgl') {
+    for (const old of version.archivos.filter(a => a.tipo === fileType)) {
+      await removeArchivo(old)
+    }
+  }
+  await invalidatePublicData()
+  return archivo
+}
+
+/**
+ * Short-lived link to download the original upload (the game .zip or an
+ * image), for the project's owner.
+ */
+const getDownloadUrl = async (fileId, userId) => {
+  const archivo = await prisma.archivo.findUnique({
+    where: { id: fileId },
+    include: { version: { include: { proyecto: true } } },
+  })
+  if (!archivo) throw new NotFoundError('File not found')
+  if (archivo.version.proyecto.id_usuario !== userId) throw new ForbiddenError('Not authorized')
+
+  return { url: await getPresignedUrl(archivo.ruta_storage, 300, archivo.nombre_archivo) }
 }
 
 /**
@@ -171,10 +222,12 @@ const deleteVersionFile = async (fileId, userId) => {
     throw new ForbiddenError('Not authorized')
   }
 
-  return removeArchivo(archivo)
+  await removeArchivo(archivo)
+  await invalidatePublicData()
 }
 
 module.exports = {
+  getDownloadUrl,
   createVersion,
   uploadVersionFile: replaceOrAddFile,
   setActiveVersion,

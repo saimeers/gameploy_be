@@ -1,10 +1,9 @@
 const router = require('express').Router();
-const { PrismaClient } = require('@prisma/client')
 const c = require('../controllers/admin.controller');
+const catalogController = require('../controllers/catalog.controller');
 const commentController = require('../controllers/comment.controller');
 const { verifyToken, requireRegisteredUser } = require('../middlewares/auth.middleware');
 const { requireRoles } = require('../middlewares/rbac.middleware');
-const prisma = new PrismaClient()
 
 // All admin routes require admin role
 router.use(verifyToken, requireRegisteredUser, requireRoles('admin'));
@@ -21,6 +20,24 @@ router.use(verifyToken, requireRegisteredUser, requireRoles('admin'));
  *       200: { description: Stats object }
  */
 router.get('/stats', c.getStats);
+
+/**
+ * @swagger
+ * /admin/stats/visits:
+ *   get:
+ *     summary: Where the visits to all projects come from
+ *     description: Same shape as /projects/mine/visits, across the platform.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: days
+ *         schema: { type: integer }
+ *     responses:
+ *       200: { description: Visit stats }
+ */
+router.get('/stats/visits', c.getVisitStats);
 
 /**
  * @swagger
@@ -143,6 +160,50 @@ router.delete('/files/:id', c.deleteFile);
 
 /**
  * @swagger
+ * /admin/files/{id}/contents:
+ *   get:
+ *     summary: List the files inside a game build
+ *     description: >
+ *       Paths are relative to the folder that holds index.html. `compressed`
+ *       flags a Gzip/Brotli build, which the player cannot load, and `pwa`
+ *       whether it uses Unity's PWA template.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: "{ root, totalBytes, files: [{ path, size }], compressed, pwa }" }
+ *       404: { description: File not found }
+ *       422: { description: Not a game build }
+ */
+router.get('/files/:id/contents', c.getBuildContents);
+
+/**
+ * @swagger
+ * /admin/files/{id}/download:
+ *   get:
+ *     summary: Link to download the original upload of a file
+ *     description: The link is valid for 5 minutes.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: "{ url }" }
+ *       404: { description: File not found }
+ */
+router.get('/files/:id/download', c.downloadFile);
+
+/**
+ * @swagger
  * /admin/comments/{id}/moderate:
  *   patch:
  *     summary: Hide or show a comment without deleting it
@@ -227,76 +288,105 @@ router.get('/users/:id', c.getUser);
 
 router.patch('/users/:id/approve', c.approveUser);
 
-// ── Categorias
+// ── Categorias y etiquetas
 /**
  * @swagger
  * /admin/categorias:
  *   get:
- *     summary: List all categories
+ *     summary: List all categories, active or not, with how many projects use each
  *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200: { description: "[{ id, nombre, descripcion, activo, _count: { proyectos } }]" }
  *   post:
- *     summary: Create category
+ *     summary: Create a category
  *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [nombre]
+ *             properties:
+ *               nombre: { type: string }
+ *               descripcion: { type: string }
+ *     responses:
+ *       201: { description: Created }
+ *       409: { description: Name already exists }
+ * /admin/categorias/{id}:
+ *   patch:
+ *     summary: Rename or describe a category
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *   delete:
+ *     summary: Delete a category that no project uses
+ *     description: Responds 409 when projects use it; deactivate it instead.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200: { description: Deleted }
+ *       409: { description: In use by some project }
+ * /admin/categorias/{id}/status:
+ *   patch:
+ *     summary: Activate or deactivate a category
+ *     description: >
+ *       An inactive category is no longer offered for new projects; the
+ *       projects that already use it keep it.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [activo]
+ *             properties:
+ *               activo: { type: boolean }
+ *     responses:
+ *       200: { description: Updated category }
+ * /admin/etiquetas:
+ *   get:
+ *     summary: List all tags, active or not, with how many projects use each
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *   post:
+ *     summary: Create a tag
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ * /admin/etiquetas/{id}:
+ *   patch:
+ *     summary: Rename a tag
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *   delete:
+ *     summary: Delete a tag that no project uses
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ * /admin/etiquetas/{id}/status:
+ *   patch:
+ *     summary: Activate or deactivate a tag
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
  */
-router.get('/categorias', async (req, res, next) => {
-  try {
-    const cats = await prisma.categoria.findMany({ orderBy: { nombre: 'asc' } })
-    res.json({ success: true, data: cats })
-  } catch (err) { next(err) }
-})
-
-router.post('/categorias', async (req, res, next) => {
-  try {
-    const cat = await prisma.categoria.create({ data: req.body })
-    res.status(201).json({ success: true, data: cat })
-  } catch (err) { next(err) }
-})
-
-router.patch('/categorias/:id', async (req, res, next) => {
-  try {
-    const cat = await prisma.categoria.update({
-      where: { id: Number(req.params.id) }, data: req.body,
-    })
-    res.json({ success: true, data: cat })
-  } catch (err) { next(err) }
-})
-
-router.delete('/categorias/:id', async (req, res, next) => {
-  try {
-    await prisma.categoria.delete({ where: { id: Number(req.params.id) } })
-    res.json({ success: true, message: 'Deleted' })
-  } catch (err) { next(err) }
-})
-
-// ── Etiquetas
-router.get('/etiquetas', async (req, res, next) => {
-  try {
-    const tags = await prisma.etiqueta.findMany({ orderBy: { nombre: 'asc' } })
-    res.json({ success: true, data: tags })
-  } catch (err) { next(err) }
-})
-
-router.post('/etiquetas', async (req, res, next) => {
-  try {
-    const tag = await prisma.etiqueta.create({ data: req.body })
-    res.status(201).json({ success: true, data: tag })
-  } catch (err) { next(err) }
-})
-
-router.patch('/etiquetas/:id', async (req, res, next) => {
-  try {
-    const tag = await prisma.etiqueta.update({
-      where: { id: Number(req.params.id) }, data: req.body,
-    })
-    res.json({ success: true, data: tag })
-  } catch (err) { next(err) }
-})
-
-router.delete('/etiquetas/:id', async (req, res, next) => {
-  try {
-    await prisma.etiqueta.delete({ where: { id: Number(req.params.id) } })
-    res.json({ success: true, message: 'Deleted' })
-  } catch (err) { next(err) }
-})
+for (const [path, h] of Object.entries(catalogController)) {
+  router.get(`/${path}`, h.list);
+  router.post(`/${path}`, h.create);
+  router.patch(`/${path}/:id`, h.update);
+  router.patch(`/${path}/:id/status`, h.setStatus);
+  router.delete(`/${path}/:id`, h.remove);
+}
 
 module.exports = router;

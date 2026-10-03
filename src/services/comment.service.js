@@ -1,6 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const { NotFoundError, ForbiddenError } = require('../utils/errors');
 const { sendNewCommentNotification } = require('./email.service');
+const { invalidatePublicData } = require('./cache.service');
 
 const prisma = new PrismaClient();
 
@@ -22,6 +23,7 @@ const addComment = async (projectId, userId, { contenido, calificacion }) => {
     },
     include: { usuario: { select: { nombre: true } } },
   });
+  await invalidatePublicData();
 
   // Non-blocking email to project owner
   if (project.usuario.id !== userId) {
@@ -49,7 +51,9 @@ const moderateComment = async (commentId, activo) => {
   const comment = await prisma.comentario.findUnique({ where: { id: commentId } });
   if (!comment) throw new NotFoundError('Comment not found');
 
-  return prisma.comentario.update({ where: { id: commentId }, data: { activo } });
+  const updated = await prisma.comentario.update({ where: { id: commentId }, data: { activo } });
+  await invalidatePublicData();
+  return updated;
 };
 
 /**
@@ -61,6 +65,7 @@ const deleteComment = async (commentId) => {
   if (!comment) throw new NotFoundError('Comment not found');
 
   await prisma.comentario.delete({ where: { id: commentId } });
+  await invalidatePublicData();
 
   return comment;
 };
