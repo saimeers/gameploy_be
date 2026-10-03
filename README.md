@@ -276,7 +276,11 @@ invoca en cada inicio de sesión para crear o recuperar el registro local a part
 
 ## Archivos y ejecución de los juegos
 
-Los archivos se suben a `POST /projects/:id/versions/:versionId/files` (multipart, hasta 500 MB).
+Los archivos se suben a `POST /projects/:id/versions/:versionId/files` (multipart, **hasta 95 MB**;
+si no, 413). La API está detrás del proxy de Cloudflare, que en el plan gratis rechaza peticiones de
+más de 100 MB; el margen cubre el resto del formulario. El límite está en `src/config/uploads.js` y
+el frontend comprueba el mismo valor antes de subir. Al reemplazar la portada o el juego de una
+versión, el anterior se quita solo cuando el nuevo ya está guardado.
 El original queda en el bucket de Railway (`projects/<projectId>/versions/<versionId>/...`) como
 respaldo y para descargarlo; lo que descargan los jugadores se **publica** aparte
 (`services/publish.service.js`):

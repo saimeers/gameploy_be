@@ -14,7 +14,7 @@ jest.mock('../../src/services/storage.service', () => ({
 jest.mock('../../src/services/publish.service', () => ({
   isPublishingEnabled: jest.fn(() => true),
   publishArchivo: jest.fn(async () => ({ ruta_publica: 'builds/nuevo/', manifiesto: { files: [] } })),
-  removePublished: jest.fn(),
+  removePublished: jest.fn(() => Promise.resolve()),
 }))
 
 const { deleteFile, getPresignedUrl } = require('../../src/services/storage.service')
@@ -143,6 +143,35 @@ describe('uploadVersionFile', () => {
     await expect(uploadVersionFile('v1', OWNER, FILE, 'juego_webgl')).rejects.toThrow('R2 caído')
     expect(deleteFile).toHaveBeenCalledWith('key')
     expect(mockPrisma.archivo.create).not.toHaveBeenCalled()
+  })
+
+  describe('reemplazar el juego de una versión', () => {
+    const OLD = { id: 'viejo', tipo: 'juego_webgl', ruta_storage: 'k/viejo.zip', ruta_publica: 'builds/viejo/' }
+
+    beforeEach(() => {
+      mockPrisma.versionProyecto.findUnique.mockResolvedValue({
+        id: 'v1', id_proyecto: 'proj-1', proyecto: PROJECT, archivos: [OLD, ARCHIVOS[2]],
+      })
+      mockPrisma.archivo.count.mockResolvedValue(0)
+    })
+
+    it('si la subida falla, el juego anterior sigue en la versión', async () => {
+      publishArchivo.mockRejectedValueOnce(new Error('build sin index.html'))
+
+      await expect(uploadVersionFile('v1', OWNER, FILE, 'juego_webgl')).rejects.toThrow('build sin index.html')
+      expect(mockPrisma.archivo.delete).not.toHaveBeenCalled()
+      expect(deleteFile).not.toHaveBeenCalledWith('k/viejo.zip')
+    })
+
+    it('si va bien, guarda el nuevo y después quita el anterior (no las capturas)', async () => {
+      await uploadVersionFile('v1', OWNER, FILE, 'juego_webgl')
+
+      expect(mockPrisma.archivo.delete).toHaveBeenCalledTimes(1)
+      expect(mockPrisma.archivo.delete).toHaveBeenCalledWith({ where: { id: 'viejo' } })
+      const created = mockPrisma.archivo.create.mock.invocationCallOrder[0]
+      const removed = mockPrisma.archivo.delete.mock.invocationCallOrder[0]
+      expect(created).toBeLessThan(removed)
+    })
   })
 })
 

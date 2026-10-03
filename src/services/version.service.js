@@ -155,14 +155,6 @@ const replaceOrAddFile = async (versionId, userId, file, fileType) => {
   if (!version) throw new NotFoundError('Version not found')
   if (version.proyecto.id_usuario !== userId) throw new ForbiddenError('Not authorized')
 
-  // For portada and juego_webgl: replace existing
-  if (fileType === 'portada' || fileType === 'juego_webgl') {
-    const existing = version.archivos.filter(a => a.tipo === fileType)
-    for (const old of existing) {
-      await removeArchivo(old)
-    }
-  }
-
   const key = buildStorageKey(version.id_proyecto, versionId, `${Date.now()}_${file.originalname}`)
   await uploadFile({ buffer: file.buffer, key, mimetype: file.mimetype })
 
@@ -188,6 +180,14 @@ const replaceOrAddFile = async (versionId, userId, file, fileType) => {
       ...published,
     },
   })
+
+  // A version has one cover and one build: the previous one goes only now
+  // that the new one is saved, so a failed upload never leaves it without.
+  if (fileType === 'portada' || fileType === 'juego_webgl') {
+    for (const old of version.archivos.filter(a => a.tipo === fileType)) {
+      await removeArchivo(old)
+    }
+  }
   await invalidatePublicData()
   return archivo
 }
