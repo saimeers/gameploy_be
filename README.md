@@ -339,6 +339,11 @@ visitas pasan a memoria y el límite deja pasar las peticiones en lugar de bloqu
 global es `RATE_LIMIT_MAX` peticiones por IP cada 15 minutos (un salón comparte IP; la ficha de un
 juego cuesta una sola petición) y el de login, 20.
 
+La API está detrás del proxy de Cloudflare, así que la IP que ve Express es la de un servidor de
+Cloudflare compartido por muchos visitantes. `utils/clientIp.js` toma la del visitante de
+`CF-Connecting-IP`, pero solo si la conexión llega desde un rango de Cloudflare (así nadie puede
+falsificarla llamando al origen directamente). La usan el límite de peticiones y las visitas.
+
 ## Despliegue
 
 La API, la base de datos, Redis y el bucket de originales viven en Railway; `npm start` es el comando

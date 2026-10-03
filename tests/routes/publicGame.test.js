@@ -129,6 +129,25 @@ describe('GET /public/games/:slug', () => {
     expect(mockPrisma.visita.create).toHaveBeenCalledTimes(1)
   })
 
+  it('detrás de Cloudflare cuenta a cada visitante, no al servidor de Cloudflare', async () => {
+    // trust proxy 1: X-Forwarded-For simula que la conexión llega desde Cloudflare
+    const via = (visitor) => ({ 'X-Forwarded-For': '172.70.1.1', 'CF-Connecting-IP': visitor })
+    await page(via('181.49.10.10'))
+    await page(via('181.49.10.11'))
+    await page(via('181.49.10.10'))
+    await new Promise(resolve => setImmediate(resolve))
+
+    expect(mockPrisma.visita.create).toHaveBeenCalledTimes(2)
+  })
+
+  it('fuera de Cloudflare, CF-Connecting-IP no sirve para inflar visitas', async () => {
+    await page({ 'CF-Connecting-IP': '1.1.1.1' })
+    await page({ 'CF-Connecting-IP': '2.2.2.2' })
+    await new Promise(resolve => setImmediate(resolve))
+
+    expect(mockPrisma.visita.create).toHaveBeenCalledTimes(1)
+  })
+
   it('404 si el slug no existe', async () => {
     mockPrisma.proyecto.findUnique.mockResolvedValue(null)
     mockPrisma.slugAnterior.findUnique.mockResolvedValue(null)

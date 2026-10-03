@@ -11,6 +11,7 @@ const cdnToken = require('../utils/cdnToken')
 const visitService = require('../services/visit.service')
 const projectService = require('../services/project.service')
 const cache = require('../services/cache.service')
+const { clientIp } = require('../utils/clientIp')
 
 const authRoutes = require('./auth.routes');
 const userRoutes = require('./user.routes');
@@ -109,7 +110,7 @@ router.get('/public/games/:slug', async (req, res, next) => {
 
     // Not awaited: locating and storing the visit must not delay the page
     visitService.recordVisit(project.id, {
-      ip: req.ip,
+      ip: clientIp(req),
       origen: req.headers.referer || req.headers.origin || null,
     })
 
