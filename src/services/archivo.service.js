@@ -16,17 +16,23 @@ const prisma = new PrismaClient();
  */
 const removeArchivo = async (archivo) => {
   await prisma.archivo.delete({ where: { id: archivo.id } });
-
-  const stillReferenced = await prisma.archivo.count({
-    where: { ruta_storage: archivo.ruta_storage },
-  });
-
-  if (stillReferenced === 0) {
-    await deleteFile(archivo.ruta_storage).catch(() => {});
-    forgetBuild(archivo.ruta_storage);
-  }
-
+  await removeOrphanedObjects([archivo.ruta_storage]);
   return archivo;
 };
 
-module.exports = { removeArchivo };
+/**
+ * Delete from the bucket the given objects that no Archivo row points at any
+ * more. Call it after deleting the rows.
+ * @param {string[]} rutas storage keys, duplicates allowed
+ */
+const removeOrphanedObjects = async (rutas) => {
+  for (const ruta of new Set(rutas)) {
+    const stillReferenced = await prisma.archivo.count({ where: { ruta_storage: ruta } });
+    if (stillReferenced === 0) {
+      await deleteFile(ruta).catch(() => {});
+      forgetBuild(ruta);
+    }
+  }
+};
+
+module.exports = { removeArchivo, removeOrphanedObjects };

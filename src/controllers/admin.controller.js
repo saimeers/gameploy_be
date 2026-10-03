@@ -17,6 +17,13 @@ const getVisitStats = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+const getBuildContents = async (req, res, next) => {
+  try {
+    const contents = await adminService.getBuildContents(req.params.id);
+    success(res, { data: contents });
+  } catch (err) { next(err); }
+};
+
 const getAllProjects = async (req, res, next) => {
   try {
     const { page, limit } = req.query;
@@ -70,6 +77,7 @@ const approveUser = async (req, res, next) => {
 module.exports = {
   getStats,
   getVisitStats,
+  getBuildContents,
   getAllProjects,
   getProject,
   toggleFeatured,

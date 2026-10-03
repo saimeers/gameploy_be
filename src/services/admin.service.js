@@ -1,6 +1,8 @@
 const { PrismaClient } = require('@prisma/client');
 const { NotFoundError, ConflictError, ValidationError } = require('../utils/errors');
 const { removeArchivo } = require('./archivo.service');
+const { deleteProjectAndFiles } = require('./project.service');
+const { loadBuild } = require('./play.service');
 
 const prisma = new PrismaClient();
 
@@ -82,7 +84,32 @@ const toggleFeatured = async (projectId, destacado) => {
 };
 
 const adminDeleteProject = async (projectId) => {
-  return prisma.proyecto.delete({ where: { id: projectId } });
+  const project = await prisma.proyecto.findUnique({ where: { id: projectId }, select: { id: true } });
+  if (!project) throw new NotFoundError('Project not found');
+  await deleteProjectAndFiles(projectId);
+};
+
+/**
+ * What a game build contains: every file with its size, plus the checks the
+ * upload form runs (compressed build, PWA template), for the admin to review.
+ */
+const getBuildContents = async (fileId) => {
+  const archivo = await prisma.archivo.findUnique({ where: { id: fileId } });
+  if (!archivo) throw new NotFoundError('File not found');
+  if (archivo.tipo !== 'juego_webgl') throw new ValidationError('Only game builds have contents');
+
+  const build = await loadBuild(archivo.ruta_storage);
+  const files = [...build.files]
+    .map(([path, data]) => ({ path: path.slice(build.root.length), size: data.length }))
+    .sort((a, b) => a.path.localeCompare(b.path));
+
+  return {
+    root: build.root,
+    totalBytes: build.bytes,
+    files,
+    compressed: files.some(f => /^Build\/.*\.(gz|br|unityweb)$/i.test(f.path)),
+    pwa: files.some(f => f.path === 'manifest.webmanifest' || f.path === 'ServiceWorker.js'),
+  };
 };
 
 /**
@@ -129,6 +156,7 @@ module.exports = {
   getProjectById,
   toggleFeatured,
   adminDeleteProject,
+  getBuildContents,
   adminDeleteFile,
   approveUser,
 };

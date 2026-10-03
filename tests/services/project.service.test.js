@@ -1,16 +1,27 @@
 const mockPrisma = {
-  proyecto: { findUnique: jest.fn(), update: jest.fn() },
+  proyecto: { findUnique: jest.fn(), update: jest.fn(), delete: jest.fn() },
   slugAnterior: { findUnique: jest.fn(), deleteMany: jest.fn(), create: jest.fn() },
+  archivo: { findMany: jest.fn(), count: jest.fn() },
+  categoria: { findUnique: jest.fn() },
+  etiqueta: { count: jest.fn() },
   $transaction: jest.fn(ops => Promise.all(ops)),
 }
 
 jest.mock('@prisma/client', () => ({ PrismaClient: jest.fn(() => mockPrisma) }))
+jest.mock('../../src/services/storage.service', () => ({
+  deleteFile: jest.fn(() => Promise.resolve()),
+  getObjectBuffer: jest.fn(),
+}))
+
+const { deleteFile } = require('../../src/services/storage.service')
 
 const projects = require('../../src/services/project.service')
 
 const OWNER = { dbUser: { id: 'u1', rol: { nombre: 'estudiante' } } }
 const OTHER = { dbUser: { id: 'u2', rol: { nombre: 'estudiante' } } }
-const PROJECT = { id: 'p1', slug: 'memoria-x7k2ab', id_usuario: 'u1' }
+const PROJECT = {
+  id: 'p1', slug: 'memoria-x7k2ab', id_usuario: 'u1', id_categoria: 3, etiquetas: [{ id_etiqueta: 7 }],
+}
 
 /** findUnique de proyecto: por id devuelve PROJECT; por slug, lo que diga `bySlug`. */
 const projectLookup = (bySlug = {}) => ({ where }) =>
@@ -98,5 +109,44 @@ describe('updateProject', () => {
     })
 
     expect(mockPrisma.proyecto.update.mock.calls[0][0].data).toEqual({ nombre: 'Nuevo' })
+  })
+})
+
+describe('updateProject con el catálogo', () => {
+  it('no deja asignar una categoría inactiva', async () => {
+    mockPrisma.categoria.findUnique.mockResolvedValue({ id: 4, activo: false })
+
+    await expect(projects.updateProject('p1', 'u1', { id_categoria: 4 })).rejects.toMatchObject({ statusCode: 422 })
+  })
+
+  it('deja conservar la categoría y las etiquetas que ya tenía aunque estén inactivas', async () => {
+    mockPrisma.etiqueta.count.mockResolvedValue(0)
+
+    await projects.updateProject('p1', 'u1', { id_categoria: 3, etiquetas: [7] })
+
+    expect(mockPrisma.categoria.findUnique).not.toHaveBeenCalled()
+    expect(mockPrisma.etiqueta.count).not.toHaveBeenCalled()
+  })
+
+  it('no deja añadir etiquetas inactivas', async () => {
+    mockPrisma.etiqueta.count.mockResolvedValue(1)
+
+    await expect(projects.updateProject('p1', 'u1', { etiquetas: [7, 8, 9] })).rejects.toMatchObject({ statusCode: 422 })
+  })
+})
+
+describe('deleteProjectAndFiles', () => {
+  it('borra del bucket los archivos que ya nadie usa, una vez cada uno', async () => {
+    mockPrisma.archivo.findMany.mockResolvedValue([
+      { ruta_storage: 'k/game.zip' }, { ruta_storage: 'k/game.zip' }, { ruta_storage: 'k/heredada.png' },
+    ])
+    // La imagen sigue referenciada por otra fila, p. ej. una versión que la heredó.
+    mockPrisma.archivo.count.mockImplementation(({ where }) =>
+      Promise.resolve(where.ruta_storage === 'k/heredada.png' ? 1 : 0))
+
+    await projects.deleteProjectAndFiles('p1')
+
+    expect(mockPrisma.proyecto.delete).toHaveBeenCalledWith({ where: { id: 'p1' } })
+    expect(deleteFile.mock.calls).toEqual([['k/game.zip']])
   })
 })

@@ -1,10 +1,13 @@
 const { PrismaClient } = require('@prisma/client');
 const { NotFoundError, ForbiddenError, ValidationError, ConflictError } = require('../utils/errors');
 const { generateSlug, slugify, isValidSlug, SLUG_MIN, SLUG_MAX } = require('../utils/slug');
+const { assertActiveAssignments } = require('./catalog.service');
+const { removeOrphanedObjects } = require('./archivo.service');
 
 const prisma = new PrismaClient();
 
 const createProject = async (userId, { nombre, descripcion, instrucciones, id_categoria, etiquetas = [] }) => {
+  await assertActiveAssignments({ id_categoria, etiquetas });
   const slug = generateSlug(nombre);
 
   return prisma.proyecto.create({
@@ -104,9 +107,17 @@ const getMyProjects = async (userId, { page = 1, limit = 12 } = {}) => {
 const EDITABLE_FIELDS = ['nombre', 'descripcion', 'instrucciones', 'visibilidad', 'id_categoria'];
 
 const updateProject = async (projectId, userId, data) => {
-  const project = await prisma.proyecto.findUnique({ where: { id: projectId } });
+  const project = await prisma.proyecto.findUnique({
+    where: { id: projectId },
+    include: { etiquetas: { select: { id_etiqueta: true } } },
+  });
   if (!project) throw new NotFoundError('Project not found');
   if (project.id_usuario !== userId) throw new ForbiddenError('You do not own this project');
+
+  await assertActiveAssignments(data, {
+    id_categoria: project.id_categoria,
+    etiquetas: project.etiquetas.map(e => e.id_etiqueta),
+  });
 
   // Anything else (slug, estado, destacado, id_usuario...) has its own
   // endpoint with its own checks, so it is ignored here.
@@ -203,6 +214,20 @@ const changeSlug = async (projectId, input, requestingUser) => {
   }
 };
 
+/**
+ * Delete a project with everything it owns. The database cascades to versions,
+ * files, controls, comments and visits; the objects in the bucket are removed
+ * afterwards, unless another row still points at them.
+ */
+const deleteProjectAndFiles = async (projectId) => {
+  const archivos = await prisma.archivo.findMany({
+    where: { version: { id_proyecto: projectId } },
+    select: { ruta_storage: true },
+  });
+  await prisma.proyecto.delete({ where: { id: projectId } });
+  await removeOrphanedObjects(archivos.map(a => a.ruta_storage));
+};
+
 const deleteProject = async (projectId, requestingUser) => {
   const project = await prisma.proyecto.findUnique({ where: { id: projectId } });
   if (!project) throw new NotFoundError('Project not found');
@@ -211,7 +236,7 @@ const deleteProject = async (projectId, requestingUser) => {
   const isAdmin = requestingUser.dbUser.rol.nombre === 'admin';
   if (!isOwner && !isAdmin) throw new ForbiddenError('Not authorized to delete this project');
 
-  await prisma.proyecto.delete({ where: { id: projectId } });
+  await deleteProjectAndFiles(projectId);
 };
 
 module.exports = {
@@ -221,6 +246,7 @@ module.exports = {
   updateProject,
   publishProject,
   deleteProject,
+  deleteProjectAndFiles,
   resolveSlug,
   checkSlug,
   changeSlug,

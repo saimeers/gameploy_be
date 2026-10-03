@@ -64,10 +64,13 @@ model Usuario {
   @@map("usuarios")
 }
 
+/// Categories and tags are deactivated rather than deleted: an inactive one is
+/// no longer offered for new projects, but the projects that use it keep it.
 model Categoria {
   id          Int        @id @default(autoincrement())
   nombre      String     @unique
   descripcion String?
+  activo      Boolean    @default(true)
   proyectos   Proyecto[]
 
   @@map("categorias")
@@ -76,6 +79,7 @@ model Categoria {
 model Etiqueta {
   id        Int                @id @default(autoincrement())
   nombre    String             @unique
+  activo    Boolean            @default(true)
   proyectos ProyectoEtiqueta[]
 
   @@map("etiquetas")
