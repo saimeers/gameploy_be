@@ -15,13 +15,42 @@ const lookup = (ip) => {
   return geoip.lookup(ip);
 };
 
+/** Cloudflare sends these when the visitor cannot be placed on a map. */
+const UNKNOWN_COUNTRIES = new Set(['XX', 'T1']);
+
+const decode = (value) => {
+  if (!value) return null;
+  try {
+    return value.includes('%') ? decodeURIComponent(value) : value;
+  } catch {
+    return value;
+  }
+};
+
 /**
- * Country, region and city of an IP, from the offline GeoLite database. The IP
- * never leaves the server and is not stored; private and unknown addresses
- * resolve to nulls.
- * @param {string | undefined} ip
+ * Location as resolved by Cloudflare at the edge, which is far more accurate
+ * than the offline database: the free GeoLite data follows who *registered* an
+ * address range rather than who uses it, so Colombian ISPs end up in the
+ * United States or Brazil.
+ *
+ * `CF-IPCountry` always arrives on a proxied request; the city and region need
+ * «Add visitor location headers» enabled in Cloudflare (free). Without it only
+ * the country is set, which is still right.
+ * @param {Record<string, string | undefined>} [headers]
  */
-const locate = (ip) => {
+const fromCloudflare = (headers = {}) => {
+  const country = headers['cf-ipcountry']?.toUpperCase();
+  if (!country || country.length !== 2 || UNKNOWN_COUNTRIES.has(country)) return null;
+
+  return {
+    codigo_pais: country,
+    region: decode(headers['cf-region-code'] || headers['cf-region']) || null,
+    ciudad: decode(headers['cf-ipcity']) || null,
+  };
+};
+
+/** Country, region and city of an IP, from the offline GeoLite database. */
+const fromDatabase = (ip) => {
   const clean = ip?.replace(/^::ffff:/, '');
   if (!clean) return EMPTY_LOCATION;
   try {
@@ -36,6 +65,16 @@ const locate = (ip) => {
     return EMPTY_LOCATION;
   }
 };
+
+/**
+ * Where a visit comes from: Cloudflare's own answer when the request went
+ * through it, and the offline database otherwise (local development, or a
+ * request that reached the origin directly). The IP never leaves the server
+ * and is not stored.
+ * @param {string | undefined} ip
+ * @param {Record<string, string | undefined>} [headers] request headers
+ */
+const locate = (ip, headers) => fromCloudflare(headers) ?? fromDatabase(ip);
 
 const UNIQUE_VISIT_SECONDS = 30 * 60;
 
@@ -60,12 +99,14 @@ const isNewVisit = (projectId, ip) => {
  * throws, and callers do not need to await it: a failed record must not
  * break the page being visited.
  * @param {string} projectId
- * @param {{ ip?: string, origen?: string | null }} visitor
+ * @param {{ ip?: string, origen?: string | null, headers?: object }} visitor
  */
-const recordVisit = async (projectId, { ip, origen = null } = {}) => {
+const recordVisit = async (projectId, { ip, origen = null, headers } = {}) => {
   try {
     if (!(await isNewVisit(projectId, ip))) return;
-    await prisma.visita.create({ data: { id_proyecto: projectId, origen, ...locate(ip) } });
+    await prisma.visita.create({
+      data: { id_proyecto: projectId, origen, ...locate(ip, headers) },
+    });
   } catch { /* a lost visit is better than a broken page */ }
 };
 

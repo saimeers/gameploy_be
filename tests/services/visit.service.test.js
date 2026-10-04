@@ -50,6 +50,48 @@ describe('locate', () => {
   })
 })
 
+describe('locate detrás de Cloudflare', () => {
+  // La base offline ubica los rangos colombianos en Estados Unidos o Brasil,
+  // porque sigue a quien los registró. Cloudflare resuelve en el borde.
+  const CUCUTA = {
+    'cf-ipcountry': 'CO',
+    'cf-region-code': 'NSA',
+    'cf-ipcity': 'Cúcuta',
+  }
+
+  it('prefiere la ubicación que resuelve Cloudflare', () => {
+    expect(visits.locate('8.8.8.8', CUCUTA))
+      .toEqual({ codigo_pais: 'CO', region: 'NSA', ciudad: 'Cúcuta' })
+    expect(geoip.lookup).not.toHaveBeenCalled()
+  })
+
+  it('con solo el país, que es lo que llega sin activar las cabeceras de ubicación', () => {
+    expect(visits.locate('8.8.8.8', { 'cf-ipcountry': 'co' }))
+      .toEqual({ codigo_pais: 'CO', region: null, ciudad: null })
+  })
+
+  it('usa el nombre de la región si no viene su código', () => {
+    expect(visits.locate(undefined, { 'cf-ipcountry': 'CO', 'cf-region': 'Norte de Santander' }).region)
+      .toBe('Norte de Santander')
+  })
+
+  it('descifra la ciudad cuando viene codificada', () => {
+    expect(visits.locate(undefined, { 'cf-ipcountry': 'CO', 'cf-ipcity': 'C%C3%BAcuta' }).ciudad)
+      .toBe('Cúcuta')
+  })
+
+  it('recurre a la base offline cuando Cloudflare no sabe de dónde viene', () => {
+    expect(visits.locate('181.49.10.10', { 'cf-ipcountry': 'XX' }))
+      .toEqual({ codigo_pais: 'CO', region: 'ANT', ciudad: 'Medellín' })
+    expect(visits.locate('181.49.10.10', { 'cf-ipcountry': 'T1' }).codigo_pais).toBe('CO')
+  })
+
+  it('recurre a la base offline sin pasar por Cloudflare, como en desarrollo', () => {
+    expect(visits.locate('181.49.10.10', {}).ciudad).toBe('Medellín')
+    expect(visits.locate('181.49.10.10').ciudad).toBe('Medellín')
+  })
+})
+
 describe('recordVisit', () => {
   it('guarda la ubicación de la visita, nunca la IP', async () => {
     await visits.recordVisit('p1', { ip: '181.49.10.10', origen: 'https://x.test' })
@@ -59,6 +101,17 @@ describe('recordVisit', () => {
       id_proyecto: 'p1', origen: 'https://x.test', codigo_pais: 'CO', region: 'ANT', ciudad: 'Medellín',
     })
     expect(JSON.stringify(data)).not.toContain('181.49')
+  })
+
+  it('guarda la ubicación que resolvió Cloudflare cuando la petición pasó por él', async () => {
+    await visits.recordVisit('p1', {
+      ip: '8.8.8.8',
+      headers: { 'cf-ipcountry': 'CO', 'cf-region-code': 'NSA', 'cf-ipcity': 'Cúcuta' },
+    })
+
+    expect(mockPrisma.visita.create.mock.calls[0][0].data).toMatchObject({
+      codigo_pais: 'CO', region: 'NSA', ciudad: 'Cúcuta',
+    })
   })
 
   it('cuenta una sola visita por visitante cada 30 minutos', async () => {

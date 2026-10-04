@@ -114,6 +114,7 @@ router.get('/public/games/:slug', async (req, res, next) => {
     visitService.recordVisit(project.id, {
       ip: clientIp(req),
       origen: req.headers.referer || req.headers.origin || null,
+      headers: req.headers,
     })
 
     res.json({ success: true, data: await withFileUrls(project) })

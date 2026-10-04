@@ -14,7 +14,11 @@ const create = async (req, res, next) => {
 const getBySlug = async (req, res, next) => {
   try {
     const project = await projectService.getProjectBySlug(req.params.slug, req.user);
-    visitService.recordVisit(project.id, { ip: clientIp(req), origen: req.headers.referer || null });
+    visitService.recordVisit(project.id, {
+      ip: clientIp(req),
+      origen: req.headers.referer || null,
+      headers: req.headers,
+    });
     success(res, { data: await withFileUrls(project) });
   } catch (err) { next(err); }
 };

@@ -251,8 +251,15 @@ Reglas relevantes:
   ofrecerse en los formularios y filtros, pero los proyectos que las usan las conservan. Solo se
   pueden eliminar si ningún proyecto las usa (si no, 409). Un proyecto no puede recibir una
   categoría o etiqueta inactiva nueva.
-- Cada visita guarda `codigo_pais`, `region` y `ciudad`, calculados con `geoip-lite` a partir de la
-  IP del visitante, que no se guarda. La base (~110 MB de memoria) se carga con la primera visita.
+- Cada visita guarda `codigo_pais`, `region` y `ciudad`. Detrás de Cloudflare se toman de las
+  cabeceras que resuelve el borde (`CF-IPCountry`, `CF-Region-Code`, `CF-IPCity`), que son mucho más
+  fiables: la base offline sigue a quien **registró** cada rango, así que ubica a los ISP
+  colombianos en Estados Unidos o Brasil. `geoip-lite` queda como respaldo para desarrollo o para
+  una petición que llegue directa al origen; su base (~110 MB de memoria) solo se carga si hace
+  falta. La IP del visitante no se guarda en ningún caso.
+  > `CF-IPCountry` llega siempre en una petición proxyada; la ciudad y la región exigen activar
+  > **Add visitor location headers** en Cloudflare (Rules → Settings → Managed Transforms, gratis).
+  > Sin eso solo se registra el país, que ya es correcto.
   Se cuenta una visita por visitante y proyecto cada 30 minutos: la clave es un HMAC de la IP con
   `VISIT_SALT` que solo vive en Redis (o en memoria) durante ese tiempo.
 - `GET /public/games/:slug`, la búsqueda (60 s), las categorías y etiquetas (5 min) y las estadísticas
