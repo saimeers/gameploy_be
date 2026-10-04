@@ -304,7 +304,8 @@ Cada respuesta guarda su versión.
   botón "Danos tu opinión".
 - **Resultados** (`GET /admin/encuestas/resumen`): n, media, desviación e intervalo de confianza del
   95 % (t de Student) de los dos puntajes; bandas SUS (pobre < 51, mejorable < 68, buena < 80,3,
-  excelente); puntaje favorable de cada ítem; tendencia mensual; participación y comentarios.
+  excelente) e histograma del SUS en tramos de 10; por cada ítem, cuántos eligieron cada respuesta,
+  si es inverso y su puntaje favorable; tendencia mensual; participación y comentarios.
   `GET /admin/encuestas/export.csv` descarga todas las respuestas para analizarlas en otra
   herramienta.
 

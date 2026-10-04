@@ -207,16 +207,30 @@ const countBy = (rows, field) => {
 const susPercent = (answer, i) => susContribution(answer, i) * 25;
 const uxPercent = (answer, i) => (uxFavorable(answer, i) - 1) * 25;
 
-/** Mean of each item, as raw agreement (1–5) and as favorable score (0–100). */
-const itemMeans = (rows, field, percent) =>
+/**
+ * Each item: how many chose each answer (1–5, raw), whether it is negative
+ * (agreeing is bad), its mean agreement and its favorable score (0–100).
+ */
+const itemMeans = (rows, field, percent, isNegative) =>
   Array.from({ length: cfg.ITEMS }, (_, i) => {
     const answers = rows.map(r => r[field][i]);
+    const respuestas = [1, 2, 3, 4, 5].map(v => answers.filter(a => a === v).length);
     return {
       item: i + 1,
+      inversa: isNegative(i),
+      respuestas,
       acuerdo: round(mean(answers), 2),
       favorable: round(mean(answers.map(a => percent(a, i)))),
     };
   });
+
+/** SUS scores in ten 10-point bins (the last one includes 100). */
+const histogram = (scores) =>
+  Array.from({ length: 10 }, (_, b) => ({
+    desde: b * 10,
+    hasta: b * 10 + 10,
+    respuestas: scores.filter(s => (b === 9 ? s >= 90 : s >= b * 10 && s < b * 10 + 10)).length,
+  }));
 
 const filtersToWhere = ({ dias, perfil, momento } = {}) => {
   const where = {};
@@ -267,12 +281,13 @@ const summary = async (filters = {}) => {
         ...b,
         respuestas: rows.filter(r => bandFor(r.sus_puntaje).id === b.id).length,
       })),
-      items: rows.length ? itemMeans(rows, 'sus', susPercent) : [],
+      histograma: histogram(rows.map(r => r.sus_puntaje)),
+      items: rows.length ? itemMeans(rows, 'sus', susPercent, i => i % 2 === 1) : [],
     },
     experiencia: {
       ...ux,
       inversos: cfg.UX_REVERSED,
-      items: rows.length ? itemMeans(rows, 'ux', uxPercent) : [],
+      items: rows.length ? itemMeans(rows, 'ux', uxPercent, i => cfg.UX_REVERSED.includes(i + 1)) : [],
     },
     tendencia: [...months].map(([mes, list]) => ({
       mes,

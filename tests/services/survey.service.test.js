@@ -200,8 +200,13 @@ describe('summary y exportCsv', () => {
     expect(s.usabilidad.bandas.find(b => b.id === 'excelente').respuestas).toBe(1)
     expect(s.usabilidad.bandas.find(b => b.id === 'pobre').respuestas).toBe(1)
     // ítem 2 (negativo): 1 es lo mejor (100) y 3 es neutral (50)
-    expect(s.usabilidad.items[1]).toEqual({ item: 2, acuerdo: 2, favorable: 75 })
-    expect(s.experiencia.items[3]).toEqual({ item: 4, acuerdo: 2, favorable: 75 })
+    expect(s.usabilidad.items[1]).toEqual({ item: 2, inversa: true, respuestas: [1, 0, 1, 0, 0], acuerdo: 2, favorable: 75 })
+    expect(s.usabilidad.items[0]).toMatchObject({ inversa: false, respuestas: [0, 0, 1, 0, 1] })
+    expect(s.experiencia.items[3]).toEqual({ item: 4, inversa: true, respuestas: [1, 0, 1, 0, 0], acuerdo: 2, favorable: 75 })
+    expect(s.experiencia.items[2].inversa).toBe(false)
+    // Histograma: 50 en el tramo 50–60 y 100 en el último (90–100)
+    expect(s.usabilidad.histograma.map(b => b.respuestas)).toEqual([0, 0, 0, 0, 0, 1, 0, 0, 0, 1])
+    expect(s.usabilidad.histograma[9]).toEqual({ desde: 90, hasta: 100, respuestas: 1 })
     expect(s.experiencia.inversos).toEqual([4, 8])
     expect(s.tendencia).toEqual([
       { mes: '2026-09', n: 1, usabilidad: 100, experiencia: 100 },
