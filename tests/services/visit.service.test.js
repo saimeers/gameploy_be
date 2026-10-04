@@ -80,6 +80,26 @@ describe('locate detrás de Cloudflare', () => {
       .toBe('Cúcuta')
   })
 
+  it('rearma las tildes: Node lee las cabeceras como latin1 y Cloudflare las manda en UTF-8', () => {
+    // 'Cúcuta' en UTF-8, leído byte a byte como latin1, es lo que llega.
+    const comoLlega = Buffer.from('Cúcuta', 'utf8').toString('latin1')
+    expect(comoLlega).toBe('CÃºcuta')
+
+    expect(visits.locate(undefined, { 'cf-ipcountry': 'CO', 'cf-ipcity': comoLlega }).ciudad)
+      .toBe('Cúcuta')
+  })
+
+  it('respeta un nombre que ya venía bien, aunque lleve tildes', () => {
+    expect(visits.locate(undefined, { 'cf-ipcountry': 'ES', 'cf-ipcity': 'Málaga' }).ciudad)
+      .toBe('Málaga')
+  })
+
+  it('aplica la misma corrección al nombre de la región', () => {
+    const comoLlega = Buffer.from('Bogotá D.C.', 'utf8').toString('latin1')
+    expect(visits.locate(undefined, { 'cf-ipcountry': 'CO', 'cf-region': comoLlega }).region)
+      .toBe('Bogotá D.C.')
+  })
+
   it('recurre a la base offline cuando Cloudflare no sabe de dónde viene', () => {
     expect(visits.locate('181.49.10.10', { 'cf-ipcountry': 'XX' }))
       .toEqual({ codigo_pais: 'CO', region: 'ANT', ciudad: 'Medellín' })
