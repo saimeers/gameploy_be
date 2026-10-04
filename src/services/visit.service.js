@@ -18,13 +18,28 @@ const lookup = (ip) => {
 /** Cloudflare sends these when the visitor cannot be placed on a map. */
 const UNKNOWN_COUNTRIES = new Set(['XX', 'T1']);
 
+/**
+ * Text of a Cloudflare header. Node decodes header values as latin1, while
+ * Cloudflare sends them as UTF-8, so «Cúcuta» arrives as «CÃºcuta» unless the
+ * bytes are read back. Some setups percent-encode them instead.
+ * @param {string | undefined} value
+ */
 const decode = (value) => {
   if (!value) return null;
-  try {
-    return value.includes('%') ? decodeURIComponent(value) : value;
-  } catch {
-    return value;
+
+  let text = value;
+  if (text.includes('%')) {
+    try { text = decodeURIComponent(text); } catch { /* se queda como vino */ }
   }
+
+  if (/[\u0080-ÿ]/.test(text)) {
+    const utf8 = Buffer.from(text, 'latin1').toString('utf8');
+    // Si no era UTF-8 mal leído, la reinterpretación deja caracteres de
+    // reemplazo: en ese caso vale más el texto original.
+    if (!utf8.includes('�')) text = utf8;
+  }
+
+  return text;
 };
 
 /**
