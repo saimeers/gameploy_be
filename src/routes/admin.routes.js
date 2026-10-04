@@ -2,6 +2,7 @@ const router = require('express').Router();
 const c = require('../controllers/admin.controller');
 const catalogController = require('../controllers/catalog.controller');
 const commentController = require('../controllers/comment.controller');
+const surveyController = require('../controllers/survey.controller');
 const { verifyToken, requireRegisteredUser } = require('../middlewares/auth.middleware');
 const { requireRoles } = require('../middlewares/rbac.middleware');
 
@@ -38,6 +39,40 @@ router.get('/stats', c.getStats);
  *       200: { description: Visit stats }
  */
 router.get('/stats/visits', c.getVisitStats);
+
+/**
+ * @swagger
+ * /admin/encuestas/resumen:
+ *   get:
+ *     summary: Results of the usability (SUS) and experience survey
+ *     description: >
+ *       Mean, standard deviation and 95 % confidence interval of both scores,
+ *       SUS bands, favorable score per item, monthly trend, participation and
+ *       the latest comments.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - { in: query, name: dias, schema: { type: integer }, description: Only the last N days }
+ *       - { in: query, name: perfil, schema: { type: string, enum: [estudiante, docente, visitante] } }
+ *       - { in: query, name: momento, schema: { type: string, enum: [primer_proyecto, uso_prolongado, tras_jugar, voluntaria] } }
+ *     responses:
+ *       200: { description: Survey summary }
+ */
+router.get('/encuestas/resumen', surveyController.summary);
+
+/**
+ * @swagger
+ * /admin/encuestas/export.csv:
+ *   get:
+ *     summary: Every anonymous answer as CSV (same filters as the summary)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200: { description: CSV file }
+ */
+router.get('/encuestas/export.csv', surveyController.exportCsv);
 
 /**
  * @swagger

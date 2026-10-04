@@ -21,6 +21,7 @@ const commentRoutes = require('./comment.routes');
 const searchRoutes = require('./search.routes');
 const adminRoutes = require('./admin.routes');
 const controlRoutes = require('./control.routes');
+const surveyRoutes = require('./survey.routes');
 const { verifyToken } = require('../middlewares/auth.middleware');
 const { requireRoles } = require('../middlewares/rbac.middleware');
 
@@ -32,6 +33,7 @@ router.use('/projects/:projectId/comments', commentRoutes);
 router.use('/search', searchRoutes);
 router.use('/admin', adminRoutes);
 router.use('/projects/:projectId/controls', controlRoutes)
+router.use('/encuesta', surveyRoutes)
 
 router.get('/public/games/:slug', async (req, res, next) => {
   try {

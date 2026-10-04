@@ -39,6 +39,21 @@ enum InputType {
   mobile
 }
 
+/// Who answered the usability survey: the role of the account, or visitante.
+enum SurveyProfile {
+  estudiante
+  docente
+  visitante
+}
+
+/// What led to the answer: the invitation that was shown, or voluntaria.
+enum SurveyMoment {
+  primer_proyecto
+  uso_prolongado
+  tras_jugar
+  voluntaria
+}
+
 model Rol {
   id          Int      @id @default(autoincrement())
   nombre      RoleName @unique
@@ -60,6 +75,15 @@ model Usuario {
   rol_solicitado RoleName?
   proyectos      Proyecto[]
   comentarios    Comentario[]
+
+  /// Only whether the user answered the survey, never when: the answer itself
+  /// is anonymous and must not be traceable back to the account.
+  encuesta_respondida      Boolean   @default(false)
+  encuesta_pospuestas      Int       @default(0)
+  encuesta_pospuesta_hasta DateTime?
+  /// Days on which the user opened the platform, to invite long-time users.
+  dias_activos             Int       @default(0)
+  ultimo_dia_activo        DateTime? @db.Date
 
   @@map("usuarios")
 }
@@ -204,4 +228,32 @@ model Visita {
 
   @@index([id_proyecto, fecha])
   @@map("visitas")
+}
+
+/// Anonymous answer to the usability (SUS) and experience questionnaire about
+/// the platform. It keeps no user, email or IP, and only the day it was sent.
+model RespuestaEncuesta {
+  id                      String        @id @default(uuid())
+  fecha                   DateTime      @default(now()) @db.Date
+  /// Version of the questions in src/config/encuesta.js
+  version                 Int
+  perfil                  SurveyProfile
+  momento                 SurveyMoment
+  edad                    String?
+  genero                  String?
+  experiencia_videojuegos String?
+  frecuencia_juego        String?
+  juegos_serios_previos   String?
+  /// The ten SUS answers, 1 (totally disagree) to 5 (totally agree), in order.
+  sus                     Int[]
+  /// The ten experience answers, same scale, in order.
+  ux                      Int[]
+  /// 0 to 100, standard SUS scoring.
+  sus_puntaje             Float
+  /// 0 to 100, mean agreement with the negative items reversed.
+  ux_puntaje              Float
+  comentario              String?
+
+  @@index([fecha])
+  @@map("respuestas_encuesta")
 }

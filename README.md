@@ -116,8 +116,8 @@ corre sin infraestructura y sin credenciales.
 tests/
 ├── app.test.js        Health check, 404 y exigencia de token en los endpoints protegidos
 ├── middlewares/       Control de acceso por roles
-├── routes/            Ficha pública por visibilidad, /play, CDN local y subidas
-├── services/          Versiones y archivos, publicación en el CDN, enlaces firmados, caché y visitas
+├── routes/            Ficha pública por visibilidad, /play, CDN local, subidas y encuesta
+├── services/          Versiones y archivos, CDN, enlaces firmados, caché, visitas y encuesta (SUS)
 ├── utils/             Tokens del CDN, contador de peticiones en Redis, slugs y respuestas
 ├── helpers/           Redis simulado en memoria
 └── setup.js           Variables de entorno mínimas para cargar los módulos
@@ -219,11 +219,15 @@ a Prisma.
 | Público | `GET /play/:projectId/:versionId/*` | Respaldo para builds antiguos: versión activa de un proyecto publicado y no privado |
 | Desarrollo | `GET /cdn/t/<exp>.<firma>/*` | Enlace firmado; solo sin R2 y fuera de producción |
 | Docente | `GET /teacher/evaluations` | docente, admin |
+| `/encuesta` | `GET /estado`, `POST /` | Público (con sesión opcional); el admin no responde |
+| `/encuesta` | `POST /posponer` | Autenticado |
+| `/admin` | `GET /encuestas/resumen?dias&perfil&momento`, `GET /encuestas/export.csv` | admin |
 
 ## Modelo de datos
 
 `Rol` → `Usuario` → `Proyecto` → { `VersionProyecto` → `Archivo`, `ControlJuego`, `Comentario`,
 `Visita`, `SlugAnterior`, `ProyectoEtiqueta` → `Etiqueta` }, y `Proyecto` → `Categoria`.
+`RespuestaEncuesta` no se relaciona con nada: las respuestas a la encuesta son anónimas.
 
 Enumeraciones (sus valores viajan tal cual en la API):
 
@@ -273,6 +277,36 @@ Firebase gestiona las credenciales; la API nunca almacena contraseñas. El regis
 
 Mientras tanto, `requireRegisteredUser` bloquea cualquier endpoint protegido. `POST /auth/sync` se
 invoca en cada inicio de sesión para crear o recuperar el registro local a partir del `firebase_uid`.
+
+## Encuesta de usabilidad y experiencia
+
+Para evaluar la usabilidad y la experiencia de usuario de la plataforma, cualquier persona (con o
+sin cuenta) puede responder un cuestionario de dos partes, con escala de acuerdo de 1 a 5:
+
+- **Usabilidad**: la System Usability Scale (SUS), 10 ítems. Puntaje de 0 a 100: los ítems impares
+  suman `x − 1` y los pares `5 − x`; el total se multiplica por 2,5. El promedio de referencia es 68.
+- **Experiencia**: 10 ítems; el 4 y el 8 son negativos y se invierten. Índice de 0 a 100.
+
+Más cinco datos opcionales (edad, género, experiencia y frecuencia con videojuegos, juegos serios
+previos) y un comentario abierto. Las preguntas y sus valores permitidos están en
+`src/config/encuesta.js` (`VERSION`); los textos, en el frontend (`src/modules/survey/preguntas.js`).
+Cada respuesta guarda su versión.
+
+- **Anónima**: `RespuestaEncuesta` no guarda usuario, correo ni IP, y su fecha no tiene hora. Con
+  cuenta, solo se marca `Usuario.encuesta_respondida` (sin fecha, para no poder cruzarla con la
+  respuesta) y una segunda respuesta da 409. Sin cuenta, el navegador recuerda que ya respondió y
+  `POST /encuesta` admite 60 respuestas por hora y por IP (un salón comparte IP), así que no hay
+  garantía de una por persona. Los administradores no responden.
+- **Cuándo se invita** (`GET /encuesta/estado` con sesión): al publicar el primer proyecto
+  (estudiante) o hacer la primera evaluación (docente), o con 7 días desde el registro y 3 días de
+  uso (`dias_activos`, que cuenta esa misma consulta). "Ahora no" (`POST /encuesta/posponer`) la
+  oculta 3 días, como mucho dos veces. El frontend también la ofrece tras 3 minutos jugando y con el
+  botón "Danos tu opinión".
+- **Resultados** (`GET /admin/encuestas/resumen`): n, media, desviación e intervalo de confianza del
+  95 % (t de Student) de los dos puntajes; bandas SUS (pobre < 51, mejorable < 68, buena < 80,3,
+  excelente); puntaje favorable de cada ítem; tendencia mensual; participación y comentarios.
+  `GET /admin/encuestas/export.csv` descarga todas las respuestas para analizarlas en otra
+  herramienta.
 
 ## Archivos y ejecución de los juegos
 
