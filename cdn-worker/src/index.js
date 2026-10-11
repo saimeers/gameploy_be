@@ -1,4 +1,4 @@
-import { parsePath, verifySignature } from './token.js'
+import { parsePath, verifyAnySignature } from './token.js'
 
 const text = (status, body) =>
   new Response(body, { status, headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' } })
@@ -18,7 +18,7 @@ export default {
     const target = parsePath(url.pathname)
     if (!target) return text(404, 'Not found')
 
-    const allowed = await verifySignature(env.CDN_SIGNING_SECRET, target)
+    const allowed = await verifyAnySignature([env.CDN_SIGNING_SECRET, env.CDN_SIGNING_SECRET_PREVIOUS], target)
     if (!allowed) return text(403, 'Forbidden')
 
     const cacheKey = new Request(`${url.origin}/__objects/${encodeURI(target.key)}`)

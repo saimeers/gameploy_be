@@ -2,7 +2,7 @@ import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import worker from '../src/index.js'
-import { parsePath, verifySignature } from '../src/token.js'
+import { parsePath, verifySignature, verifyAnySignature } from '../src/token.js'
 
 // La API firma con node:crypto (src/utils/cdnToken.js); el Worker verifica con
 // WebCrypto. Usar el código real de la API asegura que ambos lados coinciden.
@@ -172,4 +172,22 @@ test('parsePath y verifySignature aceptan exactamente lo que firma la API', asyn
   assert.equal(target.key, 'builds/abc/Build/Juego.wasm')
   assert.equal(await verifySignature(SECRET, target), true)
   assert.equal(await verifySignature('otro-secreto', target), false)
+})
+
+// La API y el Worker son dos despliegues distintos: durante un cambio de
+// secreto el Worker acepta el nuevo y el anterior, para que los enlaces ya
+// emitidos no devuelvan 403 hasta que venzan por su cuenta.
+test('durante la rotacion, el Worker acepta el secreto nuevo y el anterior', async () => {
+  const url = new URL(link('builds/abc/', 'index.html'))
+  const target = parsePath(url.pathname)
+
+  // Firmado con el de siempre, que durante la transicion es el anterior.
+  assert.equal(await verifyAnySignature(['secreto-nuevo', SECRET], target), true)
+  // Y con el nuevo tambien, en cuanto la API empieza a usarlo.
+  assert.equal(await verifySignature(SECRET, target), true)
+  // Un secreto ajeno sigue sin valer, con o sin lista.
+  assert.equal(await verifyAnySignature(['uno', 'otro'], target), false)
+  // Un hueco en la lista (sin secreto anterior configurado) no la rompe.
+  assert.equal(await verifyAnySignature([SECRET, undefined], target), true)
+  assert.equal(await verifyAnySignature([undefined, undefined], target), false)
 })
