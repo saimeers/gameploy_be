@@ -12,6 +12,7 @@ const visitService = require('../services/visit.service')
 const projectService = require('../services/project.service')
 const cache = require('../services/cache.service')
 const { clientIp } = require('../utils/clientIp')
+const { isValidSlug } = require('../utils/slug')
 
 const authRoutes = require('./auth.routes');
 const userRoutes = require('./user.routes');
@@ -37,6 +38,13 @@ router.use('/encuesta', surveyRoutes)
 
 router.get('/public/games/:slug', async (req, res, next) => {
   try {
+    // The slug is the cache key and reaches the database, so its shape is
+    // checked first: a burst of random slugs would otherwise create one
+    // Redis entry and one query per value, none of which can ever hit.
+    if (!isValidSlug(req.params.slug)) {
+      return res.status(404).json({ success: false, message: 'Project not found' })
+    }
+
     // Cached for a minute (invalidated when a project changes); the
     // visibility checks below run on every request. Old slugs still resolve:
     // the frontend redirects to the current one.
@@ -139,68 +147,6 @@ router.get(/^\/cdn(\/t\/.+)$/, async (req, res) => {
     res.setHeader('Cache-Control', target.key.endsWith('/index.html') ? 'public, max-age=300' : 'public, max-age=31536000, immutable')
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
     res.sendFile(file)
-})
-
-// Legacy: games uploaded before publishing existed, served from the zip in
-// the bucket. Same rules as the public game page: only the active version of
-// a published project that is not private. New builds are served by the CDN.
-router.get(/^\/play\/([^/]+)\/([^/]+)\/(.+)$/, async (req, res, next) => {
-    try {
-        const projectId = req.params[0]
-        const versionId = req.params[1]
-        const filename = req.params[2]
-
-        const archivo = await prisma.archivo.findFirst({
-            where: {
-                id_version: versionId,
-                tipo: 'juego_webgl',
-                version: {
-                    id_proyecto: projectId,
-                    es_activa: true,
-                    proyecto: { estado: 'publicado', visibilidad: { not: 'privado' } },
-                },
-            },
-            select: { id: true, ruta_storage: true, fecha_subida: true },
-        })
-
-        if (!archivo) {
-            return res.status(404).send('Game not found')
-        }
-
-        // Unity WebGL runs in an iframe of the frontend's origin
-        res.setHeader('Access-Control-Allow-Origin', '*')
-        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
-
-        // Each upload creates a new Archivo row, so its id identifies the
-        // content of every file in the build: browsers keep their copy and
-        // only revalidate, which answers 304 without touching the zip.
-        const etag = `"${archivo.id}-${play.SERVE_REVISION}"`
-        res.setHeader('ETag', etag)
-        res.setHeader('Cache-Control', 'public, no-cache')
-        res.setHeader('Last-Modified', new Date(archivo.fecha_subida).toUTCString())
-        const cached = (req.headers['if-none-match'] ?? '').split(',').map(t => t.trim())
-        if (cached.includes(etag)) {
-            return res.status(304).end()
-        }
-
-        const build = await play.loadBuild(archivo.ruta_storage)
-        const file = play.findFile(build, filename)
-
-        if (!file) {
-            return res.status(404).send(`File not found in zip: ${filename}`)
-        }
-
-        res.setHeader('Content-Type', play.contentTypeFor(file.name))
-
-        if (play.isEntryPage(build, file.name)) {
-            return res.send(play.injectProgressReporter(file.data.toString('utf8')))
-        }
-
-        res.send(file.data)
-
-    } catch (err) {
-        next(err)
-    }
 })
 
 router.get('/teacher/evaluations', verifyToken, requireRoles('docente', 'admin'), async (req, res, next) => {

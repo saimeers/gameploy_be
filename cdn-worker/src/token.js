@@ -57,3 +57,22 @@ export async function verifySignature(secret, { prefix, exp, signature }, nowMs 
   )
   return crypto.subtle.verify('HMAC', key, sig, encoder.encode(`${prefix}|${exp}`))
 }
+
+/**
+ * Igual que `verifySignature`, pero contra varios secretos.
+ *
+ * Existe para poder cambiar el secreto sin tirar los enlaces ya emitidos. La
+ * API y el Worker son dos despliegues distintos: si el secreto cambiara en
+ * uno solo, cada enlace en circulación daría 403 hasta que el otro lo
+ * siguiera. Durante la rotación el Worker acepta el nuevo y el anterior, y
+ * el anterior se retira cuando los enlaces que lo usaban han vencido.
+ *
+ * @param {Array<string|undefined>} secrets el vigente primero
+ */
+export async function verifyAnySignature(secrets, target, nowMs = Date.now()) {
+  for (const secret of secrets) {
+    if (!secret) continue
+    if (await verifySignature(secret, target, nowMs)) return true
+  }
+  return false
+}
