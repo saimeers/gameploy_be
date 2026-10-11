@@ -45,9 +45,12 @@ const globalLimiter = createLimiter('rl:global:', {
   // A classroom shares one public IP; with games and images served by the
   // CDN, a game page costs about one API request.
   max: Number(process.env.RATE_LIMIT_MAX) || 1000,
-  // Legacy game files and the dev CDN are static: one game boot is ~10
-  // requests and must not count against the limit.
-  skip: (req) => req.path.startsWith('/api/v1/play/') || req.path.startsWith('/api/v1/cdn/'),
+  // The dev CDN is static: one game boot is ~10 requests for files this API
+  // only serves when R2 is not configured, so they must not count against
+  // the limit. In production that route returns 404 before touching storage.
+  // Nothing else is exempt: an unmetered public route is a free way to make
+  // the API do work, which is how a path scanner saturated the origin once.
+  skip: (req) => req.path.startsWith('/api/v1/cdn/'),
 });
 
 const authLimiter = createLimiter('rl:auth:', {
@@ -60,7 +63,12 @@ app.use(globalLimiter);
 app.use('/api/v1/auth', authLimiter);
 
 // ── Swagger docs
-app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+// Off in production unless explicitly enabled: the spec is a complete map of
+// every route and its payloads, which is reconnaissance handed to whoever
+// asks. Developers still get it locally, where NODE_ENV is not production.
+if (process.env.ENABLE_API_DOCS === 'true' || process.env.NODE_ENV !== 'production') {
+  app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+}
 
 // ── API routes
 app.use('/api/v1', routes);
